@@ -1,0 +1,8 @@
+/target/
+/.DS_Store
+**/__pycache__/
+*.pyc
+*.swp
+*.tmp
+*.bak
+SHA256SUMS.local
