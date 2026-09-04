@@ -153,5 +153,7 @@ if [ -f "$ssh_config" ]; then
     cp -p "$ssh_config" "$ssh_config.bak.$(date +%Y%m%d%H%M%S)"
 fi
 write_managed_config "$ssh_config" "$managed_alias" "$host_name" "$user_name" "$port" "$key_path" "${proxy_jump:-none}" "$host_key_alias" "$user_known_hosts" "$strict_host_key" "$check_host_ip"
-ssh -F "$ssh_config" -o BatchMode=yes "$managed_alias" 'codex --version' >/dev/null
+ssh -F "$ssh_config" -o BatchMode=yes "$managed_alias" \
+    "printf '%b' '\\001\\002\\003\\004\\005\\006\\007\\010'; PATH=\"\${CODEX_INSTALL_DIR:-\$HOME/.local/bin}:\$PATH\"; export PATH; codex --version" \
+    >/dev/null
 printf 'Installed managed SSH alias: %s\n' "$managed_alias"
