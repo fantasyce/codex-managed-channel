@@ -173,10 +173,18 @@ fn desktop_background_polling_does_not_prevent_idle_reclaim() {
             Instant::now() < deadline,
             "Desktop background polling kept the managed entry alive"
         );
-        stdin
-            .write_all(b"{\"id\":1,\"method\":\"thread/list\",\"params\":{}}\n")
-            .unwrap();
-        stdin.flush().unwrap();
+        if let Err(error) =
+            stdin.write_all(b"{\"id\":1,\"method\":\"thread/list\",\"params\":{}}\n")
+        {
+            assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
+            wait_for_exit(&mut entry, Duration::from_secs(2));
+            break;
+        }
+        if let Err(error) = stdin.flush() {
+            assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
+            wait_for_exit(&mut entry, Duration::from_secs(2));
+            break;
+        }
         thread::sleep(Duration::from_millis(100));
     }
     let log = fs::read_to_string(temp.path().join(".codex-managed/log/supervisor.jsonl")).unwrap();
