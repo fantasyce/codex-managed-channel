@@ -40,6 +40,9 @@ fi
 if [ -f "$install_root/installs/$managed_alias" ]; then
     unlink "$install_root/installs/$managed_alias"
 fi
+if [ -d "$install_root/installs" ] && [ -z "$(find "$install_root/installs" -type f -print -quit)" ]; then
+    find "$install_root" -depth -delete
+fi
 if [ "$purge" = purge ]; then
     state_root="$HOME/.local/state/codex-managed-channel/$managed_alias"
     if [ -d "$state_root" ]; then

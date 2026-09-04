@@ -64,8 +64,8 @@ validate_alias "$managed_alias" || { printf 'invalid managed alias\n' >&2; exit 
 case $repository in */*) ;; *) printf 'invalid repository\n' >&2; exit 2 ;; esac
 case $version in v[0-9]*.[0-9]*.[0-9]*) ;; *) printf 'invalid version\n' >&2; exit 2 ;; esac
 
-ssh_dir="$HOME/.ssh"
-ssh_config="$ssh_dir/config"
+ssh_dir=${CODEX_MANAGED_SSH_DIR:-"$HOME/.ssh"}
+ssh_config=${CODEX_MANAGED_SSH_CONFIG:-"$ssh_dir/config"}
 config_has_unmanaged_alias "$ssh_config" "$managed_alias" && {
     printf 'managed alias already exists outside this installer block\n' >&2
     exit 1
@@ -102,7 +102,7 @@ esac
 
 work_dir=$(mktemp -d -t codex-managed-install)
 archive_name="codex-managed-channel-${version}-${target}.tar.gz"
-base_url="https://github.com/$repository/releases/download/$version"
+base_url=${CODEX_MANAGED_RELEASE_BASE_URL:-"https://github.com/$repository/releases/download/$version"}
 curl -fL "$base_url/$archive_name" -o "$work_dir/$archive_name"
 curl -fL "$base_url/SHA256SUMS" -o "$work_dir/SHA256SUMS"
 verify_checksum "$work_dir/$archive_name" "$work_dir/SHA256SUMS"
@@ -145,6 +145,9 @@ ssh "$remote" "find '$remote_stage' -depth -delete"
 
 mkdir -p "$ssh_dir"
 chmod 700 "$ssh_dir"
+if [ -f "$ssh_config" ]; then
+    cp -p "$ssh_config" "$ssh_config.bak.$(date +%Y%m%d%H%M%S)"
+fi
 write_managed_config "$ssh_config" "$managed_alias" "$host_name" "$user_name" "$port" "$key_path" "${proxy_jump:-none}"
-ssh -o BatchMode=yes "$managed_alias" 'codex --version' >/dev/null
+ssh -F "$ssh_config" -o BatchMode=yes "$managed_alias" 'codex --version' >/dev/null
 printf 'Installed managed SSH alias: %s\n' "$managed_alias"

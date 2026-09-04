@@ -43,12 +43,13 @@ if [ "$purge" = purge ]; then
 fi
 ssh "$remote" "/bin/sh -c '$remote_command'"
 
-ssh_config="$HOME/.ssh/config"
+ssh_dir=${CODEX_MANAGED_SSH_DIR:-"$HOME/.ssh"}
+ssh_config=${CODEX_MANAGED_SSH_CONFIG:-"$ssh_dir/config"}
 if [ -f "$ssh_config" ]; then
     cp -p "$ssh_config" "$ssh_config.bak.$(date +%Y%m%d%H%M%S)"
     remove_managed_config "$ssh_config" "$managed_alias"
 fi
-key_path="$HOME/.ssh/codex-managed-channel/$managed_alias"
+key_path="$ssh_dir/codex-managed-channel/$managed_alias"
 if [ -f "$key_path" ] && [ -f "$key_path.pub" ] && grep -q "codex-managed-channel:$managed_alias" "$key_path.pub"; then
     trash="$HOME/.Trash/codex-managed-channel-$managed_alias-$(date +%Y%m%d%H%M%S)"
     mkdir -p "$trash"
