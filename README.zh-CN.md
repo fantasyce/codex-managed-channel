@@ -1,5 +1,11 @@
 # Codex Managed Channel
 
+[![CI](https://github.com/fantasyce/codex-managed-channel/actions/workflows/ci.yml/badge.svg)](https://github.com/fantasyce/codex-managed-channel/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/fantasyce/codex-managed-channel)](https://github.com/fantasyce/codex-managed-channel/releases/latest)
+[![License](https://img.shields.io/github/license/fantasyce/codex-managed-channel)](LICENSE)
+
+[English](README.md)
+
 Codex Managed Channel 为 Codex Desktop 增加一条具有生命周期管理能力的
 远程 macOS SSH 通道。远端仍运行官方 Codex app-server、官方 Computer Use
 插件和用户现有的 ChatGPT 登录状态；本项目只负责隔离连接、限制入口并回收
@@ -7,6 +13,23 @@ Codex Managed Channel 为 Codex Desktop 增加一条具有生命周期管理能�
 
 这是 unofficial 社区项目，并非 OpenAI 官方产品，也不修改或分发 ChatGPT
 Desktop、Codex 或 Computer Use 的专有组件。
+
+## 适用场景
+
+当 Codex Desktop 已通过 SSH 连接远端 Mac，希望继续使用远端官方 Computer
+Use 和插件环境，同时需要对遗留 app-server/MCP 子进程进行边界明确的回收时，
+可以使用本项目。它不是通用 SSH 客户端、替代 Agent Harness，也不解决 Linux
+或 Windows 远程工作区问题。
+
+```mermaid
+flowchart LR
+    A[本地 Codex Desktop] -->|专用 SSH 别名| B[受限 SSH 入口]
+    B --> C[生命周期管理器]
+    C --> D[官方 Codex app-server]
+    D --> E[远程工作区]
+    D --> F[官方 Computer Use 与插件]
+    C -->|归档、断连、闲置或句柄压力| G[限定进程组回收]
+```
 
 ## 快速安装
 
@@ -23,6 +46,16 @@ curl -fsSL https://raw.githubusercontent.com/fantasyce/codex-managed-channel/v0.
 保留在本地。需要先下载审阅再执行时，请参考
 [安装说明](docs/installation.md)。安装后若 Codex Desktop 没立即显示新别名，
 重启一次 Desktop，然后像普通远程连接一样选择 `example-managed`。
+
+完整的安装、使用、回收和卸载过程见[90 秒匿名演示](docs/90-second-walkthrough.md)。
+其中只使用合成别名和通用路径，不包含任何真实机器信息。
+
+## 已验证内容
+
+0.1.0 已通过 Rust 与安装器测试、严格 lint、源码与 Git 历史隐私扫描、校验和
+安装、重复安装、官方 app-server 初始化、官方 Computer Use 只读调用、退出后
+进程与 socket 清零以及精确卸载。验收只使用一次性标识符，不保留机器或账号
+信息，详情见[脱敏验收记录](docs/acceptance-0.1.0.md)。
 
 ## 安全边界
 
