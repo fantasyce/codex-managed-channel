@@ -14,9 +14,9 @@ Desktop、Codex 或 Computer Use 的专有组件。
 本地已有可用的管理 SSH 别名。
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/OWNER/codex-managed-channel/v0.1.0/install.sh | \
+curl -fsSL https://raw.githubusercontent.com/fantasyce/codex-managed-channel/v0.1.0/install.sh | \
   sh -s -- --remote example-host --alias example-managed \
-  --repository OWNER/codex-managed-channel --version v0.1.0
+  --repository fantasyce/codex-managed-channel --version v0.1.0
 ```
 
 安装器会先校验发布包 SHA-256，再生成专用 Ed25519 密钥并写入配置。私钥只

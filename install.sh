@@ -19,7 +19,7 @@ EOF
 remote=
 managed_alias=
 version=v0.1.0
-repository=${CODEX_MANAGED_REPOSITORY:-example/codex-managed-channel}
+repository=${CODEX_MANAGED_REPOSITORY:-fantasyce/codex-managed-channel}
 key_path=
 while [ "$#" -gt 0 ]; do
     case $1 in

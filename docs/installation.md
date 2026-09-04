@@ -16,7 +16,7 @@ scripts, verify the archive with `shasum -a 256`, then run:
 
 ```sh
 ./install.sh --remote example-host --alias example-managed \
-  --repository OWNER/codex-managed-channel --version v0.1.0
+  --repository fantasyce/codex-managed-channel --version v0.1.0
 ```
 
 The optional `--key PATH` reuses a dedicated Ed25519 key and its `.pub` file.

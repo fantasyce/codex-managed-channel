@@ -112,7 +112,7 @@ No app-server port is exposed to a public or shared network.
 The primary quick-start interface is:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/OWNER/codex-managed-channel/main/install.sh \
+curl -fsSL https://raw.githubusercontent.com/fantasyce/codex-managed-channel/main/install.sh \
   | sh -s -- --remote example-host --alias example-managed
 ```
 
@@ -298,4 +298,3 @@ The release is complete only when:
 - the OpenAI Codex Discussion is publicly accessible;
 - the private development document records only the public repository and
   discussion URLs, without copying credentials.
-
