@@ -35,8 +35,7 @@ pub fn prepare_marketplace_from_cache(
             .map(|entry| entry.file_name().to_string_lossy().into_owned())
             .collect::<Vec<_>>(),
         Err(error)
-            if marketplace_name == "personal"
-                && error.kind() == std::io::ErrorKind::NotFound =>
+            if marketplace_name == "personal" && error.kind() == std::io::ErrorKind::NotFound =>
         {
             Vec::new()
         }
@@ -51,9 +50,9 @@ pub fn prepare_marketplace_from_cache(
         .into_iter()
         .filter(|name| {
             fs::read_dir(cache_root.join(name)).is_ok_and(|versions| {
-                versions.filter_map(|entry| entry.ok()).any(|version| {
-                    version.path().join(".codex-plugin/plugin.json").is_file()
-                })
+                versions
+                    .filter_map(|entry| entry.ok())
+                    .any(|version| version.path().join(".codex-plugin/plugin.json").is_file())
             })
         })
         .map(|name| {
@@ -65,9 +64,9 @@ pub fn prepare_marketplace_from_cache(
         })
         .collect::<Vec<_>>();
     if marketplace_name == "openai-bundled"
-        && !plugins
-            .iter()
-            .any(|plugin| plugin.get("name").and_then(Value::as_str) == Some("unified-computer-use"))
+        && !plugins.iter().any(|plugin| {
+            plugin.get("name").and_then(Value::as_str) == Some("unified-computer-use")
+        })
     {
         bail!("installed unified-computer-use plugin is unavailable");
     }

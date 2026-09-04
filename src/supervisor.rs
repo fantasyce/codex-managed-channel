@@ -257,18 +257,22 @@ fn start_worker(config: &SupervisorConfig) -> Result<WorkerProcesses> {
     let _ = fs::remove_file(&socket_path);
     let listen = format!("unix://{}", socket_path.display());
     let plugin_cache = config.real_codex_home.join("plugins/cache");
-    prepare_marketplace_from_cache(
-        &config.personal_marketplace,
-        &plugin_cache.join("personal"),
-        "personal",
-    )?;
-    validate_marketplace(&config.personal_marketplace)?;
-    prepare_marketplace_from_cache(
-        &config.bundled_marketplace,
-        &plugin_cache.join("openai-bundled"),
-        "openai-bundled",
-    )?;
-    validate_named_marketplace(&config.bundled_marketplace, "openai-bundled")?;
+    if validate_marketplace(&config.personal_marketplace).is_err() {
+        prepare_marketplace_from_cache(
+            &config.personal_marketplace,
+            &plugin_cache.join("personal"),
+            "personal",
+        )?;
+        validate_marketplace(&config.personal_marketplace)?;
+    }
+    if validate_named_marketplace(&config.bundled_marketplace, "openai-bundled").is_err() {
+        prepare_marketplace_from_cache(
+            &config.bundled_marketplace,
+            &plugin_cache.join("openai-bundled"),
+            "openai-bundled",
+        )?;
+        validate_named_marketplace(&config.bundled_marketplace, "openai-bundled")?;
+    }
     let managed_home = prepare_managed_home(
         &config.os_home,
         &config.real_codex_home,

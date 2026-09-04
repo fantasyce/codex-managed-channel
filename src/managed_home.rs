@@ -109,12 +109,7 @@ fn write_sanitized_config(
         .parse::<DocumentMut>()
         .with_context(|| format!("failed to parse {}", source.display()))?;
 
-    inject_unified_computer_use(
-        &mut document,
-        bundled_marketplace,
-        real_home,
-        os_home,
-    )?;
+    inject_unified_computer_use(&mut document, bundled_marketplace, real_home, os_home)?;
     let os_home = os_home.to_str().context("HOME path is not valid UTF-8")?;
     if let Some(projects) = document
         .get_mut("projects")

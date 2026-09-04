@@ -110,3 +110,15 @@ fn refresh_marketplace_links_repairs_versions_pruned_by_a_desktop_update() {
     );
     validate_named_marketplace(&marketplace, "openai-bundled").unwrap();
 }
+
+#[test]
+fn personal_marketplace_can_be_empty() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("personal-marketplace");
+    let missing_cache = temp.path().join("missing-personal-cache");
+
+    prepare_marketplace_from_cache(&root, &missing_cache, "personal").unwrap();
+    validate_named_marketplace(&root, "personal").unwrap();
+    let catalog = fs::read_to_string(root.join(".agents/plugins/marketplace.json")).unwrap();
+    assert!(catalog.contains(r#""plugins": []"#));
+}

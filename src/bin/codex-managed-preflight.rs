@@ -35,15 +35,19 @@ fn real_main() -> Result<serde_json::Value> {
         .map(PathBuf::from)
         .unwrap_or_else(|| home.join(".codex"));
     let plugin_cache = real_codex_home.join("plugins/cache");
-    prepare_marketplace_from_cache(&marketplace, &plugin_cache.join("personal"), "personal")?;
-    validate_marketplace(&marketplace)?;
+    if validate_marketplace(&marketplace).is_err() {
+        prepare_marketplace_from_cache(&marketplace, &plugin_cache.join("personal"), "personal")?;
+        validate_marketplace(&marketplace)?;
+    }
     let bundled_marketplace = managed_bundled_marketplace_root(&home);
-    prepare_marketplace_from_cache(
-        &bundled_marketplace,
-        &plugin_cache.join("openai-bundled"),
-        "openai-bundled",
-    )?;
-    validate_named_marketplace(&bundled_marketplace, "openai-bundled")?;
+    if validate_named_marketplace(&bundled_marketplace, "openai-bundled").is_err() {
+        prepare_marketplace_from_cache(
+            &bundled_marketplace,
+            &plugin_cache.join("openai-bundled"),
+            "openai-bundled",
+        )?;
+        validate_named_marketplace(&bundled_marketplace, "openai-bundled")?;
+    }
     let managed_root = home.join(".codex-managed");
     let managed_home = prepare_managed_home(
         &home,

@@ -45,7 +45,7 @@ fn desktop_bootstrap_probe_is_a_safe_noop_for_the_supervised_worker() {
 }
 
 #[test]
-fn preflight_rejects_a_personal_marketplace_without_a_catalog() {
+fn preflight_rejects_a_missing_bundled_plugin_cache() {
     let temp = tempfile::tempdir().unwrap();
     let fake = temp.path().join("codex");
     fs::write(
@@ -68,7 +68,7 @@ fn preflight_rejects_a_personal_marketplace_without_a_catalog() {
         .unwrap();
 
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stdout).contains("marketplace"));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("plugin cache"));
 }
 
 fn fake_codex(temp: &tempfile::TempDir) -> std::path::PathBuf {
