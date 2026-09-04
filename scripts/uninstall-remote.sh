@@ -13,7 +13,10 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 case $managed_alias in ''|*[!A-Za-z0-9._-]*) printf 'invalid managed alias\n' >&2; exit 2 ;; esac
-case $version in v[0-9]*.[0-9]*.[0-9]*) ;; *) printf 'invalid version\n' >&2; exit 2 ;; esac
+printf '%s\n' "$version" | awk '/^v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$/ {ok=1} END {exit ok ? 0 : 1}' || {
+    printf 'invalid version\n' >&2
+    exit 2
+}
 if [ -n "$purge" ] && [ "$purge" != purge ]; then
     printf 'purge requires the literal confirmation: purge\n' >&2
     exit 2

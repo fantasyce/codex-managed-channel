@@ -28,7 +28,7 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 . "$script_dir/scripts/install-lib.sh"
 validate_alias "$remote" || { printf 'invalid administrative alias\n' >&2; exit 2; }
 validate_alias "$managed_alias" || { printf 'invalid managed alias\n' >&2; exit 2; }
-case $version in v[0-9]*.[0-9]*.[0-9]*) ;; *) printf 'invalid version\n' >&2; exit 2 ;; esac
+validate_version "$version" || { printf 'invalid version\n' >&2; exit 2; }
 if [ -n "$purge" ] && [ "$purge" != purge ]; then
     printf 'purge requires the literal confirmation: purge\n' >&2
     exit 2

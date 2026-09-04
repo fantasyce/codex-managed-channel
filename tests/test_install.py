@@ -1,6 +1,8 @@
 import hashlib
+import io
 import os
 import subprocess
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -47,6 +49,8 @@ class InstallerTests(unittest.TestCase):
             ("--remote", "example host", "--alias", "example-managed"),
             ("--remote", "same-host", "--alias", "same-host"),
             ("--remote", "example-host", "--alias", "../managed"),
+            ("--remote", "example-host", "--alias", "example-managed", "--version", "v0.1.0';touch unsafe"),
+            ("--remote", "example-host", "--alias", "example-managed", "--repository", "owner/repo;unsafe"),
         ):
             with self.subTest(arguments=arguments), tempfile.TemporaryDirectory() as tmp:
                 home = Path(tmp)
@@ -105,6 +109,25 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual(config.read_bytes(), once)
             self.assertIn(b"Host other-host", once)
             self.assertEqual(once.count(b"BEGIN codex-managed-channel example-managed"), 1)
+
+    def test_archive_path_validation_rejects_traversal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            safe = root / "safe.tar.gz"
+            with tarfile.open(safe, "w:gz") as bundle:
+                payload = b"safe"
+                info = tarfile.TarInfo("codex-managed-channel/bin/example")
+                info.size = len(payload)
+                bundle.addfile(info, io.BytesIO(payload))
+            self.assertEqual(run_library("verify_archive_paths", str(safe)).returncode, 0)
+
+            unsafe = root / "unsafe.tar.gz"
+            with tarfile.open(unsafe, "w:gz") as bundle:
+                payload = b"unsafe"
+                info = tarfile.TarInfo("../unsafe")
+                info.size = len(payload)
+                bundle.addfile(info, io.BytesIO(payload))
+            self.assertNotEqual(run_library("verify_archive_paths", str(unsafe)).returncode, 0)
 
 
 if __name__ == "__main__":

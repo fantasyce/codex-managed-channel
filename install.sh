@@ -61,8 +61,8 @@ trap cleanup EXIT HUP INT TERM
 validate_alias "$remote" || { printf 'invalid administrative alias\n' >&2; exit 2; }
 validate_alias "$managed_alias" || { printf 'invalid managed alias\n' >&2; exit 2; }
 [ "$remote" != "$managed_alias" ] || { printf 'administrative and managed aliases must differ\n' >&2; exit 2; }
-case $repository in */*) ;; *) printf 'invalid repository\n' >&2; exit 2 ;; esac
-case $version in v[0-9]*.[0-9]*.[0-9]*) ;; *) printf 'invalid version\n' >&2; exit 2 ;; esac
+validate_repository "$repository" || { printf 'invalid repository\n' >&2; exit 2; }
+validate_version "$version" || { printf 'invalid version\n' >&2; exit 2; }
 
 ssh_dir=${CODEX_MANAGED_SSH_DIR:-"$HOME/.ssh"}
 ssh_config=${CODEX_MANAGED_SSH_CONFIG:-"$ssh_dir/config"}
@@ -110,6 +110,10 @@ base_url=${CODEX_MANAGED_RELEASE_BASE_URL:-"https://github.com/$repository/relea
 curl -fL "$base_url/$archive_name" -o "$work_dir/$archive_name"
 curl -fL "$base_url/SHA256SUMS" -o "$work_dir/SHA256SUMS"
 verify_checksum "$work_dir/$archive_name" "$work_dir/SHA256SUMS"
+verify_archive_paths "$work_dir/$archive_name" || {
+    printf 'release archive contains an unsafe path\n' >&2
+    exit 1
+}
 
 if [ -z "$key_path" ]; then
     key_dir="$ssh_dir/codex-managed-channel"

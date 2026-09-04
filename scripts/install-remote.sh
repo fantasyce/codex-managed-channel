@@ -15,7 +15,10 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 case $managed_alias in ''|*[!A-Za-z0-9._-]*) printf 'invalid managed alias\n' >&2; exit 2 ;; esac
-case $version in v[0-9]*.[0-9]*.[0-9]*) ;; *) printf 'invalid version\n' >&2; exit 2 ;; esac
+printf '%s\n' "$version" | awk '/^v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$/ {ok=1} END {exit ok ? 0 : 1}' || {
+    printf 'invalid version\n' >&2
+    exit 2
+}
 [ -d "$bundle" ] && [ -f "$bundle/MANIFEST.sha256" ] && [ -f "$public_key" ] || {
     printf 'verified bundle and public key are required\n' >&2
     exit 1
@@ -40,8 +43,9 @@ printf '%s\n' "$key_line" | awk '
 install_root=${CODEX_MANAGED_INSTALL_ROOT:-"$HOME/.local/libexec/codex-managed-channel/$version"}
 authorized_keys=${CODEX_MANAGED_AUTHORIZED_KEYS:-"$HOME/.ssh/authorized_keys"}
 state_root="$HOME/.local/state/codex-managed-channel/$managed_alias"
-case $install_root in *'"'*|*'
-'*) printf 'install path contains unsupported characters\n' >&2; exit 1 ;; esac
+case "$install_root:$state_root" in
+    *[!A-Za-z0-9_./:-]*) printf 'install path contains unsupported characters\n' >&2; exit 1 ;;
+esac
 
 mkdir -p "$install_root/bin" "$install_root/scripts" "$install_root/installs"
 chmod 700 "$install_root" "$install_root/bin" "$install_root/scripts" "$install_root/installs"

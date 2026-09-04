@@ -7,6 +7,29 @@ validate_alias() {
     esac
 }
 
+validate_version() {
+    printf '%s\n' "${1-}" | awk '
+        /^v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$/ { ok = 1 }
+        END { exit ok ? 0 : 1 }
+    '
+}
+
+validate_repository() {
+    printf '%s\n' "${1-}" | awk '
+        /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/ { ok = 1 }
+        END { exit ok ? 0 : 1 }
+    '
+}
+
+verify_archive_paths() {
+    archive=$1
+    tar -tzf "$archive" | awk '
+        /^\// || /(^|\/)\.\.?(\/|$)/ { bad = 1 }
+        $0 !~ /^codex-managed-channel\// { bad = 1 }
+        END { exit bad ? 1 : 0 }
+    '
+}
+
 require_command() {
     command -v "$1" >/dev/null 2>&1 || {
         printf 'required command is unavailable: %s\n' "$1" >&2
