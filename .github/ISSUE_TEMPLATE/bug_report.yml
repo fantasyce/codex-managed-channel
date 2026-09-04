@@ -1,0 +1,28 @@
+name: Bug report
+description: Report a reproducible managed-channel problem with redacted evidence
+body:
+  - type: markdown
+    attributes:
+      value: Never include keys, tokens, usernames, hostnames, addresses, task IDs, or raw configuration.
+  - type: input
+    id: version
+    attributes:
+      label: Release version
+    validations:
+      required: true
+  - type: dropdown
+    id: architecture
+    attributes:
+      label: Remote architecture
+      options:
+        - Apple silicon
+        - Intel
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Use neutral aliases and redact all identifiers.
+    validations:
+      required: true
