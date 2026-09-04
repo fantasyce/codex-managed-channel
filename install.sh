@@ -127,17 +127,19 @@ remote_stage=$(ssh "$remote" 'mktemp -d -t codex-managed-install')
 case $remote_stage in */codex-managed-install.*) ;; *) printf 'remote temporary path is invalid\n' >&2; exit 1 ;; esac
 scp -q "$work_dir/$archive_name" "$key_path.pub" "$remote:$remote_stage/"
 public_name=$(basename "$key_path.pub")
-ssh "$remote" "/bin/sh -s -- '$remote_stage' '$archive_name' '$managed_alias' '$public_name'" <<'REMOTE'
+ssh "$remote" "/bin/sh -s -- '$remote_stage' '$archive_name' '$managed_alias' '$public_name' '$version'" <<'REMOTE'
 set -eu
 stage=$1
 archive=$2
 managed_alias=$3
 public_name=$4
+version=$5
 tar -xzf "$stage/$archive" -C "$stage"
 /bin/sh "$stage/codex-managed-channel/scripts/install-remote.sh" \
   --bundle "$stage/codex-managed-channel" \
   --public-key "$stage/$public_name" \
   --alias "$managed_alias"
+  --version "$version"
 REMOTE
 ssh "$remote" "find '$remote_stage' -depth -delete"
 

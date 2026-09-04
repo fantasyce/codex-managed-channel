@@ -48,7 +48,9 @@ fn real_main() -> Result<serde_json::Value> {
         )?;
         validate_named_marketplace(&bundled_marketplace, "openai-bundled")?;
     }
-    let managed_root = home.join(".codex-managed");
+    let managed_root = env::var_os("CODEX_MANAGED_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.join(".codex-managed"));
     let managed_home = prepare_managed_home(
         &home,
         &real_codex_home,

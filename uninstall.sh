@@ -13,11 +13,13 @@ EOF
 remote=
 managed_alias=
 purge=
+version=v0.1.0
 while [ "$#" -gt 0 ]; do
     case $1 in
         --remote) remote=${2-}; shift 2 ;;
         --alias) managed_alias=${2-}; shift 2 ;;
         --purge) purge=${2-}; shift 2 ;;
+        --version) version=${2-}; shift 2 ;;
         --help|-h) usage; exit 0 ;;
         *) printf 'unknown option\n' >&2; exit 2 ;;
     esac
@@ -26,6 +28,7 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 . "$script_dir/scripts/install-lib.sh"
 validate_alias "$remote" || { printf 'invalid administrative alias\n' >&2; exit 2; }
 validate_alias "$managed_alias" || { printf 'invalid managed alias\n' >&2; exit 2; }
+case $version in v[0-9]*.[0-9]*.[0-9]*) ;; *) printf 'invalid version\n' >&2; exit 2 ;; esac
 if [ -n "$purge" ] && [ "$purge" != purge ]; then
     printf 'purge requires the literal confirmation: purge\n' >&2
     exit 2
@@ -34,7 +37,7 @@ ssh -o BatchMode=yes "$remote" true >/dev/null 2>&1 || {
     printf 'administrative SSH probe failed\n' >&2
     exit 1
 }
-remote_command='"$HOME/.local/libexec/codex-managed-channel/scripts/uninstall-remote.sh" --alias '"'$managed_alias'"
+remote_command='"$HOME/.local/libexec/codex-managed-channel/'"$version"'/scripts/uninstall-remote.sh" --alias '"'$managed_alias'"' --version '"'$version'"
 if [ "$purge" = purge ]; then
     remote_command="$remote_command --purge purge"
 fi

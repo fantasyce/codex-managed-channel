@@ -49,7 +49,9 @@ impl SupervisorConfig {
             .map(PathBuf::from)
             .context("HOME is not set")?;
         let codex_bin = resolve_codex_binary(&home)?;
-        let root = home.join(".codex-managed");
+        let root = env::var_os("CODEX_MANAGED_ROOT")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".codex-managed"));
         Ok(Self {
             codex_bin,
             eof_grace: seconds_env("CODEX_MANAGED_EOF_GRACE_SECS", 45),

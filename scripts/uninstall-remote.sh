@@ -3,20 +3,23 @@ set -eu
 
 managed_alias=
 purge=
+version=v0.1.0
 while [ "$#" -gt 0 ]; do
     case $1 in
         --alias) managed_alias=${2-}; shift 2 ;;
         --purge) purge=${2-}; shift 2 ;;
+        --version) version=${2-}; shift 2 ;;
         *) printf 'unknown remote-uninstall option\n' >&2; exit 2 ;;
     esac
 done
 case $managed_alias in ''|*[!A-Za-z0-9._-]*) printf 'invalid managed alias\n' >&2; exit 2 ;; esac
+case $version in v[0-9]*.[0-9]*.[0-9]*) ;; *) printf 'invalid version\n' >&2; exit 2 ;; esac
 if [ -n "$purge" ] && [ "$purge" != purge ]; then
     printf 'purge requires the literal confirmation: purge\n' >&2
     exit 2
 fi
 
-install_root=${CODEX_MANAGED_INSTALL_ROOT:-"$HOME/.local/libexec/codex-managed-channel"}
+install_root=${CODEX_MANAGED_INSTALL_ROOT:-"$HOME/.local/libexec/codex-managed-channel/$version"}
 authorized_keys=${CODEX_MANAGED_AUTHORIZED_KEYS:-"$HOME/.ssh/authorized_keys"}
 marker="codex-managed-channel:$managed_alias"
 if [ -f "$authorized_keys" ]; then
@@ -38,7 +41,7 @@ if [ -f "$install_root/installs/$managed_alias" ]; then
     unlink "$install_root/installs/$managed_alias"
 fi
 if [ "$purge" = purge ]; then
-    state_root="$HOME/.codex-managed"
+    state_root="$HOME/.local/state/codex-managed-channel/$managed_alias"
     if [ -d "$state_root" ]; then
         find "$state_root" -depth -delete
     fi

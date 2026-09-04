@@ -4,15 +4,18 @@ set -eu
 bundle=
 public_key=
 managed_alias=
+version=v0.1.0
 while [ "$#" -gt 0 ]; do
     case $1 in
         --bundle) bundle=${2-}; shift 2 ;;
         --public-key) public_key=${2-}; shift 2 ;;
         --alias) managed_alias=${2-}; shift 2 ;;
+        --version) version=${2-}; shift 2 ;;
         *) printf 'unknown remote-install option\n' >&2; exit 2 ;;
     esac
 done
 case $managed_alias in ''|*[!A-Za-z0-9._-]*) printf 'invalid managed alias\n' >&2; exit 2 ;; esac
+case $version in v[0-9]*.[0-9]*.[0-9]*) ;; *) printf 'invalid version\n' >&2; exit 2 ;; esac
 [ -d "$bundle" ] && [ -f "$bundle/MANIFEST.sha256" ] && [ -f "$public_key" ] || {
     printf 'verified bundle and public key are required\n' >&2
     exit 1
@@ -34,8 +37,9 @@ printf '%s\n' "$key_line" | awk '
     END { exit ok ? 0 : 1 }
 ' || { printf 'public key is not a valid Ed25519 public key line\n' >&2; exit 1; }
 
-install_root=${CODEX_MANAGED_INSTALL_ROOT:-"$HOME/.local/libexec/codex-managed-channel"}
+install_root=${CODEX_MANAGED_INSTALL_ROOT:-"$HOME/.local/libexec/codex-managed-channel/$version"}
 authorized_keys=${CODEX_MANAGED_AUTHORIZED_KEYS:-"$HOME/.ssh/authorized_keys"}
+state_root="$HOME/.local/state/codex-managed-channel/$managed_alias"
 case $install_root in *'"'*|*'
 '*) printf 'install path contains unsupported characters\n' >&2; exit 1 ;; esac
 
@@ -49,7 +53,7 @@ for relative in bin/codex-managed-entry bin/codex-managed-preflight scripts/unin
 done
 
 if [ "${CODEX_MANAGED_SKIP_PREFLIGHT:-}" != 1 ]; then
-    "$install_root/bin/codex-managed-preflight" \
+    CODEX_MANAGED_ROOT="$state_root" "$install_root/bin/codex-managed-preflight" \
         "printf '%b' '\001\002\003\004\005\006\007\010'; exec codex app-server proxy" \
         >/dev/null
 fi
@@ -65,8 +69,8 @@ if [ -f "$authorized_keys" ]; then
 else
     : > "$temporary"
 fi
-printf 'no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty,no-user-rc,command="%s/bin/codex-managed-entry" %s %s\n' \
-    "$install_root" "$key_line" "$marker" >> "$temporary"
+printf 'no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty,no-user-rc,command="env CODEX_MANAGED_ROOT=%s %s/bin/codex-managed-entry" %s %s\n' \
+    "$state_root" "$install_root" "$key_line" "$marker" >> "$temporary"
 chmod 600 "$temporary"
 mv "$temporary" "$authorized_keys"
 : > "$install_root/installs/$managed_alias"
