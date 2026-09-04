@@ -1,0 +1,111 @@
+import hashlib
+import os
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+
+PROJECT = Path(__file__).resolve().parents[1]
+INSTALLER = PROJECT / "install.sh"
+LIBRARY = PROJECT / "scripts" / "install-lib.sh"
+
+
+def run_installer(home: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["/bin/sh", str(INSTALLER), *args],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "HOME": str(home), "LC_ALL": "C"},
+    )
+
+
+def run_library(command: str, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["/bin/sh", "-c", f'. "$1"; shift; {command} "$@"', "test", str(LIBRARY), *args],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "LC_ALL": "C"},
+    )
+
+
+class InstallerTests(unittest.TestCase):
+    def assert_no_mutation(self, home: Path):
+        self.assertFalse((home / ".ssh" / "codex-managed-channel").exists())
+        self.assertFalse((home / ".ssh" / "config").exists())
+
+    def test_help_documents_required_arguments(self):
+        result = run_installer(Path(tempfile.gettempdir()), "--help")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for flag in ("--remote", "--alias", "--version", "--repository", "--key"):
+            self.assertIn(flag, result.stdout)
+
+    def test_invalid_or_equal_aliases_fail_before_mutation(self):
+        for arguments in (
+            ("--remote", "example host", "--alias", "example-managed"),
+            ("--remote", "same-host", "--alias", "same-host"),
+            ("--remote", "example-host", "--alias", "../managed"),
+        ):
+            with self.subTest(arguments=arguments), tempfile.TemporaryDirectory() as tmp:
+                home = Path(tmp)
+                result = run_installer(home, *arguments)
+                self.assertNotEqual(result.returncode, 0)
+                self.assert_no_mutation(home)
+
+    def test_existing_unmanaged_alias_is_rejected_without_mutation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            ssh = home / ".ssh"
+            ssh.mkdir()
+            config = ssh / "config"
+            original = "Host example-managed\n  HostName example.invalid\n"
+            config.write_text(original, encoding="utf-8")
+            result = run_installer(
+                home, "--remote", "example-host", "--alias", "example-managed"
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(config.read_text(encoding="utf-8"), original)
+            self.assertFalse((ssh / "codex-managed-channel").exists())
+
+    def test_checksum_verification_accepts_exact_entry_and_rejects_mismatch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifact = root / "release.tar.gz"
+            artifact.write_bytes(b"release payload")
+            digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
+            sums = root / "SHA256SUMS"
+            sums.write_text(f"{digest}  {artifact.name}\n", encoding="utf-8")
+            good = run_library("verify_checksum", str(artifact), str(sums))
+            self.assertEqual(good.returncode, 0, good.stderr)
+
+            sums.write_text(f"{'0' * 64}  {artifact.name}\n", encoding="utf-8")
+            bad = run_library("verify_checksum", str(artifact), str(sums))
+            self.assertNotEqual(bad.returncode, 0)
+
+    def test_config_renderer_is_idempotent_and_preserves_other_hosts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "config"
+            config.write_text("Host other-host\n  HostName other.invalid\n", encoding="utf-8")
+            args = (
+                str(config),
+                "example-managed",
+                "example.invalid",
+                "user",
+                "22",
+                "/Users/user/.ssh/codex-managed-channel/example-managed",
+                "none",
+            )
+            first = run_library("write_managed_config", *args)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            once = config.read_bytes()
+            second = run_library("write_managed_config", *args)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertEqual(config.read_bytes(), once)
+            self.assertIn(b"Host other-host", once)
+            self.assertEqual(once.count(b"BEGIN codex-managed-channel example-managed"), 1)
+
+
+if __name__ == "__main__":
+    unittest.main()
