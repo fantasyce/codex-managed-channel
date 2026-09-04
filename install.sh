@@ -138,7 +138,7 @@ tar -xzf "$stage/$archive" -C "$stage"
 /bin/sh "$stage/codex-managed-channel/scripts/install-remote.sh" \
   --bundle "$stage/codex-managed-channel" \
   --public-key "$stage/$public_name" \
-  --alias "$managed_alias"
+  --alias "$managed_alias" \
   --version "$version"
 REMOTE
 ssh "$remote" "find '$remote_stage' -depth -delete"
