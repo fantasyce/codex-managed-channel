@@ -26,10 +26,11 @@ mkdir -p "$root/bin" "$root/scripts" "$dist"
 cargo build --locked --release --target "$target" --manifest-path "$project_dir/Cargo.toml"
 install -m 0755 "$project_dir/target/$target/release/codex-managed-entry" "$root/bin/"
 install -m 0755 "$project_dir/target/$target/release/codex-managed-preflight" "$root/bin/"
+install -m 0755 "$project_dir/scripts/install-remote.sh" "$root/scripts/"
 install -m 0755 "$project_dir/scripts/uninstall-remote.sh" "$root/scripts/"
 (
     cd "$root"
-    shasum -a 256 bin/codex-managed-entry bin/codex-managed-preflight scripts/uninstall-remote.sh > MANIFEST.sha256
+    shasum -a 256 bin/codex-managed-entry bin/codex-managed-preflight scripts/install-remote.sh scripts/uninstall-remote.sh > MANIFEST.sha256
 )
 archive="codex-managed-channel-${version}-${target}.tar.gz"
 COPYFILE_DISABLE=1 tar -czf "$dist/$archive" -C "$work" codex-managed-channel
