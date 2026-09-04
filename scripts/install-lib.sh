@@ -56,6 +56,10 @@ write_managed_config() {
     port=$5
     identity_file=$6
     proxy_jump=$7
+    host_key_alias=${8-}
+    user_known_hosts=${9-}
+    strict_host_key=${10-}
+    check_host_ip=${11-}
     begin="# BEGIN codex-managed-channel $alias_name"
     end="# END codex-managed-channel $alias_name"
     directory=$(dirname "$config")
@@ -83,6 +87,18 @@ write_managed_config() {
         printf '  IdentitiesOnly yes\n'
         if [ "$proxy_jump" != none ] && [ -n "$proxy_jump" ]; then
             printf '  ProxyJump %s\n' "$proxy_jump"
+        fi
+        if [ -n "$host_key_alias" ] && [ "$host_key_alias" != none ]; then
+            printf '  HostKeyAlias %s\n' "$host_key_alias"
+        fi
+        if [ -n "$user_known_hosts" ] && [ "$user_known_hosts" != none ]; then
+            printf '  UserKnownHostsFile %s\n' "$user_known_hosts"
+        fi
+        if [ -n "$strict_host_key" ]; then
+            printf '  StrictHostKeyChecking %s\n' "$strict_host_key"
+        fi
+        if [ -n "$check_host_ip" ]; then
+            printf '  CheckHostIP %s\n' "$check_host_ip"
         fi
         printf '%s\n' "$end"
     } >> "$temporary"
