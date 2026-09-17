@@ -7,3 +7,6 @@
 *.tmp
 *.bak
 SHA256SUMS.local
+
+# Keep operator-specific notes out of public release history.
+/private-docs/
