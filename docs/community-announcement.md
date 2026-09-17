@@ -20,7 +20,7 @@ bundle checksums, creates a dedicated Ed25519 key, and adds an exact restricted
 authorization entry. The private key never leaves the client. The project has
 no telemetry and includes worktree, Git-history, and archive privacy scanning.
 
-Version 0.1 supports macOS clients and remote hosts on Apple silicon or Intel.
+Version 0.2 supports macOS clients and remote hosts on Apple silicon or Intel.
 It intentionally fails closed for unsupported Desktop layouts and arbitrary
 SSH ProxyCommand programs.
 

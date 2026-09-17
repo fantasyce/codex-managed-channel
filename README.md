@@ -29,7 +29,8 @@ flowchart LR
     C --> D[Official Codex app-server]
     D --> E[Remote workspace]
     D --> F[Official Computer Use and plugins]
-    C -->|archive, disconnect, idle, or FD pressure| G[Scoped process-group cleanup]
+    C -->|ordinary idle| H[Thread unsubscribe]
+    C -->|archive, lifecycle limit, or hard FD pressure| G[Scoped process-group cleanup]
 ```
 
 ## Why
@@ -46,9 +47,9 @@ Prerequisites: macOS on both sides, ChatGPT Desktop and Codex already installed
 and authenticated on the remote Mac, and a working administrative SSH alias.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/fantasyce/codex-managed-channel/v0.1.0/install.sh | \
+curl -fsSL https://raw.githubusercontent.com/fantasyce/codex-managed-channel/v0.2.0/install.sh | \
   sh -s -- --remote example-host --alias example-managed \
-  --repository fantasyce/codex-managed-channel --version v0.1.0
+  --repository fantasyce/codex-managed-channel --version v0.2.0
 ```
 
 The installer verifies the release checksum before generating a dedicated
@@ -63,12 +64,17 @@ and uninstall, see the [90-second walkthrough](docs/90-second-walkthrough.md).
 
 ## What has been verified
 
-Version 0.1.0 passed the Rust and installer suites, strict linting, source and
-Git-history privacy scans, checksum-verified installation, idempotent reinstall,
-official app-server initialization, a read-only official Computer Use call,
-zero managed processes/sockets after exit, and exact uninstall. The acceptance
-used disposable identifiers and retained no machine or account data. See the
-[redacted acceptance record](docs/acceptance-0.1.0.md).
+Version 0.2.0 adds fixed per-client sessions, bounded reattachment, guardian
+cleanup, and in-place idle-thread unsubscribe. It passed the complete Rust and
+installer suites, strict linting, isolated official-runtime lifecycle scenarios,
+source and Git-history privacy scans, and release-archive validation. The
+acceptance used only synthetic identifiers and retains no machine or account
+data. See the [redacted acceptance record](docs/acceptance-0.2.0.md).
+
+Version 0.2.0 does not isolate FD limits per tool call. A descendant can exhaust
+its own process limit without immediately crossing the app-server thresholds;
+the hard safety action still stops the whole owned runtime. See
+[Bounded recovery](docs/bounded-recovery.md#per-task-fd-isolation-is-not-implemented).
 
 ## Safety properties
 
@@ -78,6 +84,7 @@ used disposable identifiers and retained no machine or account data. See the
 - existing SSH configuration and authorization lines are preserved;
 - archive and idle cleanup use a cancelable drain window;
 - active turns are not reclaimed by the idle policy;
+- ordinary idle cleanup first unloads idle threads without disconnecting SSH;
 - unsupported SSH or Desktop layouts fail closed.
 
 See [Architecture](docs/architecture.md), [Security model](docs/security-model.md),

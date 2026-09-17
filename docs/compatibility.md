@@ -1,6 +1,6 @@
 # Compatibility
 
-Version 0.1 targets a macOS client and a macOS remote host.
+Version 0.2 targets a macOS client and a macOS remote host.
 
 | Component | Supported boundary |
 | --- | --- |
@@ -21,5 +21,5 @@ before it writes a managed configuration.
 The runtime deliberately stops with a bounded error when these resources are
 missing. It does not download, emulate, or replace proprietary Desktop
 components. Linux, Windows, headless browser substitution, password-based SSH
-bootstrapping, and arbitrary SSH `ProxyCommand` programs are outside the 0.1
+bootstrapping, and arbitrary SSH `ProxyCommand` programs are outside the 0.2
 support boundary.

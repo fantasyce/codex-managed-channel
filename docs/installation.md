@@ -11,12 +11,12 @@
 ## Review-first installation
 
 Download `install.sh`, `scripts/install-lib.sh`, the architecture release
-archive, and `SHA256SUMS` from the same `v0.1.0` GitHub release. Inspect the two
+archive, and `SHA256SUMS` from the same `v0.2.0` GitHub release. Inspect the two
 scripts, verify the archive with `shasum -a 256`, then run:
 
 ```sh
 ./install.sh --remote example-host --alias example-managed \
-  --repository fantasyce/codex-managed-channel --version v0.1.0
+  --repository fantasyce/codex-managed-channel --version v0.2.0
 ```
 
 The optional `--key PATH` reuses a dedicated Ed25519 key and its `.pub` file.
@@ -34,7 +34,7 @@ authorization line. Both configuration files are backed up before replacement.
 The installer validates aliases, resolved SSH settings, batch connectivity,
 remote OS and CPU, checksums, bundle manifest, Desktop resources, Codex
 app-server features, and plugin manifests before activating the managed alias.
-Arbitrary `ProxyCommand` programs are rejected in version 0.1; `ProxyJump` is
+Arbitrary `ProxyCommand` programs are rejected in version 0.2; `ProxyJump` is
 preserved.
 
 Repeated installation is idempotent. It neither changes the administrative

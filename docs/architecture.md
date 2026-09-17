@@ -1,8 +1,8 @@
 # Architecture
 
-This document describes the current source tree. The published `v0.1.0` tag
-contains only legacy per-connection supervision; the fixed-identity bounded
-session described below is the next release line.
+This document describes the v0.2.0 source tree. The `v0.1.0` tag contains only
+legacy per-connection supervision; v0.2.0 adds the fixed-identity bounded
+session described below.
 
 ## 1. Purpose and boundaries
 
@@ -245,6 +245,15 @@ below the recycle threshold, the connection continues. If unsubscribe fails,
 times out, closes nothing, or leaves the count too high, bounded disconnect and
 process-tree cleanup remain the fallback. The hard threshold is an independent
 safety fence and always stops the owned runtime.
+
+The FD sampler currently observes the app-server process, not an independently
+budgeted process group for each tool call. Descendant FD exhaustion can therefore
+fail or stall one task without immediately crossing the app-server thresholds.
+Task failure alone is not a cleanup guarantee. Version 0.2.0 has no reliable
+task-to-process-group mapping, so it cannot terminate only that task and prove
+that all child and parent-side descriptors were reclaimed. If pressure reaches
+the app-server hard threshold, the whole owned runtime is stopped and active
+turns are interrupted.
 
 ### 7.4 Connection lease, absolute lifetime, and explicit stop
 

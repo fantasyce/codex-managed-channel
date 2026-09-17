@@ -18,6 +18,8 @@ NOREPLY_EMAIL = re.compile(
     re.I,
 )
 GITHUB_SERVICE_EMAILS = {"actions@github.com", "noreply@github.com"}
+CHECKSUM_FILE = re.compile(r"(?:^|[/:])(?:[^/:]+\.sha256|sha256sums)$", re.I)
+CHECKSUM_LINE = re.compile(r"^[A-Fa-f0-9]{64}[ \t]+\*?(\S.*)$")
 
 
 def safe_email(value: str) -> bool:
@@ -61,6 +63,10 @@ class Scanner:
 
     def scan(self, label: str, data: bytes) -> None:
         for line_number, line in printable_lines(data):
+            if CHECKSUM_FILE.search(label):
+                checksum = CHECKSUM_LINE.fullmatch(line)
+                if checksum:
+                    line = checksum.group(1)
             for rule, pattern in self.patterns:
                 match = pattern.search(line)
                 if match and rule == "email" and safe_email(match.group(0)):

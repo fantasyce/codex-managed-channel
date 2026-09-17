@@ -1,6 +1,6 @@
-# Bounded recovery (unreleased)
+# Bounded recovery in v0.2.0
 
-This development version adds opt-in per-client sessions. It does not patch the
+Version 0.2.0 adds opt-in per-client sessions. It does not patch the
 official Codex binary or turn SSH into a shared, permanent app-server.
 
 ## Identity and ownership
@@ -75,6 +75,24 @@ can remain unobserved. Simultaneous SIGKILL of owner and guardian, machine crash
 and deliberately adversarial process escapes are not guaranteed recovery cases.
 Do not advertise this as perfect process containment.
 
+### Per-task FD isolation is not implemented
+
+Version 0.2.0 samples the app-server process for FD policy decisions. It does
+not separately enforce a descriptor limit for every descendant or map an
+arbitrary child process back to the exact tool call that started it. A child
+that reaches its own per-process FD limit can fail or stall its tool call while
+the app-server and SSH transport remain alive. Merely marking that task failed
+does not prove that the child, its descendants, or the app-server-side pipe and
+PTY handles were reclaimed.
+
+If the pressure later raises the app-server to the hard threshold, the existing
+safety action stops and reaps the whole owned runtime. That releases the
+terminated processes' descriptors, but interrupts every active turn in that
+runtime. This release deliberately does not promise single-task termination or
+single-task FD recovery. A future implementation would need task-to-process-
+group ownership, TERM/KILL escalation, direct-child reaping, parent-handle
+closure, and a post-cleanup FD recount before reporting recovery.
+
 ## Recovery semantics
 
 Reconnection sends no additional `turn/start`, no synthetic “continue” message,
@@ -144,5 +162,6 @@ convergence after closing it. Do not replace an in-use installed entry to claim
 acceptance. Preserve the administrative alias and previous release for rollback;
 stop the acceptance identity and restore only its forced command/config block.
 
-This feature is not in the previously published v0.1.0 release. Build and validate
-this development source before choosing a new release version.
+This feature is published in v0.2.0. Existing v0.1.0 installations are not
+silently upgraded; install v0.2.0 explicitly through the documented release
+procedure.

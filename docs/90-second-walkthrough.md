@@ -9,9 +9,9 @@ screenshots, or recordings.
 Start with an existing administrative SSH alias and install the signed release:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/fantasyce/codex-managed-channel/v0.1.0/install.sh | \
+curl -fsSL https://raw.githubusercontent.com/fantasyce/codex-managed-channel/v0.2.0/install.sh | \
   sh -s -- --remote example-host --alias example-managed \
-  --repository fantasyce/codex-managed-channel --version v0.1.0
+  --repository fantasyce/codex-managed-channel --version v0.2.0
 ```
 
 The installer resolves the existing alias, checks the supported topology,

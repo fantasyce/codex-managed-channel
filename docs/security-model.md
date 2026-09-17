@@ -12,7 +12,9 @@ there. Compromise of any of those is outside this project's protection.
 - The remote authorization forbids forwarding, agent forwarding, X11, PTY, and
   user rc files, and forces the managed entry executable.
 - App-server listens on a per-connection Unix socket, never a network socket.
-- Release assets and their internal executable manifest are SHA-256 verified.
+- Release assets and their internal full-file manifest are SHA-256 verified.
+- Binary archives include the project MIT license plus the exact license and
+  notice files for every Rust dependency resolved for that target.
 - SSH and authorization edits use exact markers, backups, and atomic rename.
 - Cleanup targets only a verified process group or exact installation marker.
 - The privacy gate redacts matches and scans reachable history and archives.

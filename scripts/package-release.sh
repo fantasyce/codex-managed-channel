@@ -24,13 +24,20 @@ root="$work/codex-managed-channel"
 mkdir -p "$root/bin" "$root/scripts" "$dist"
 
 cargo build --locked --release --target "$target" --manifest-path "$project_dir/Cargo.toml"
+cargo metadata --locked --format-version 1 --filter-platform "$target" \
+    --manifest-path "$project_dir/Cargo.toml" > "$work/cargo-metadata.json"
 install -m 0755 "$project_dir/target/$target/release/codex-managed-entry" "$root/bin/"
 install -m 0755 "$project_dir/target/$target/release/codex-managed-preflight" "$root/bin/"
 install -m 0755 "$project_dir/scripts/install-remote.sh" "$root/scripts/"
 install -m 0755 "$project_dir/scripts/uninstall-remote.sh" "$root/scripts/"
+install -m 0644 "$project_dir/LICENSE" "$root/LICENSE"
+python3 "$project_dir/tools/bundle-third-party-licenses.py" "$work/cargo-metadata.json" "$root"
 (
     cd "$root"
-    shasum -a 256 bin/codex-managed-entry bin/codex-managed-preflight scripts/install-remote.sh scripts/uninstall-remote.sh > MANIFEST.sha256
+    find . -type f ! -name MANIFEST.sha256 -print | LC_ALL=C sort | while IFS= read -r relative; do
+        relative=${relative#./}
+        shasum -a 256 "$relative"
+    done > MANIFEST.sha256
 )
 archive="codex-managed-channel-${version}-${target}.tar.gz"
 COPYFILE_DISABLE=1 tar -czf "$dist/$archive" -C "$work" codex-managed-channel

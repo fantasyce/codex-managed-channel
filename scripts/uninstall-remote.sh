@@ -3,7 +3,7 @@ set -eu
 
 managed_alias=
 purge=
-version=v0.1.0
+version=v0.2.0
 while [ "$#" -gt 0 ]; do
     case $1 in
         --alias) managed_alias=${2-}; shift 2 ;;

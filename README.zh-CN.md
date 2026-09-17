@@ -38,9 +38,9 @@ flowchart LR
 本地已有可用的管理 SSH 别名。
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/fantasyce/codex-managed-channel/v0.1.0/install.sh | \
+curl -fsSL https://raw.githubusercontent.com/fantasyce/codex-managed-channel/v0.2.0/install.sh | \
   sh -s -- --remote example-host --alias example-managed \
-  --repository fantasyce/codex-managed-channel --version v0.1.0
+  --repository fantasyce/codex-managed-channel --version v0.2.0
 ```
 
 安装器会先校验发布包 SHA-256，再生成专用 Ed25519 密钥并写入配置。私钥只
@@ -53,13 +53,16 @@ curl -fsSL https://raw.githubusercontent.com/fantasyce/codex-managed-channel/v0.
 
 ## 已验证内容
 
-开发中的有界重连机制及独立验收边界见[有界恢复说明](docs/bounded-recovery.md)。
+v0.2.0 的有界重连机制及验收边界见[有界恢复说明](docs/bounded-recovery.md)。
 它要求每个客户端独立 alias/key；现有 v0.1.0 安装不会自动获得此功能。
 
-0.1.0 已通过 Rust 与安装器测试、严格 lint、源码与 Git 历史隐私扫描、校验和
-安装、重复安装、官方 app-server 初始化、官方 Computer Use 只读调用、退出后
-进程与 socket 清零以及精确卸载。验收只使用一次性标识符，不保留机器或账号
-信息，详情见[脱敏验收记录](docs/acceptance-0.1.0.md)。
+v0.2.0 已通过完整 Rust 与安装器测试、严格 lint、官方运行时隔离生命周期场景、
+源码与 Git 历史隐私扫描以及发布归档检查。验收只使用合成标识符，不保留机器或
+账号信息，详情见[脱敏验收记录](docs/acceptance-0.2.0.md)。
+
+v0.2.0 尚未实现单工具调用的 FD 隔离。某个后代进程可以先触达自己的进程级上限，
+而 app-server 尚未触达阈值；硬保护动作仍会停止整个 owned runtime。详见
+[单任务 FD 隔离边界](docs/bounded-recovery.md#per-task-fd-isolation-is-not-implemented)。
 
 ## 安全边界
 

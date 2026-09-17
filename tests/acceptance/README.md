@@ -10,7 +10,8 @@ python3 tests/acceptance/entry_acceptance.py target/debug/codex-managed-entry --
 
 Cases: `contention`, `reconnect`, `isolation`, `expiry`, `lifetime`, `crash`,
 `budget`, `offline`, `startup-crash`, `idle-active`, `idle-empty`, `hard-fd`,
-`server-crash`, `stop-isolation`, `approval`, `user-input`, `guardian-crash`.
+`idle-thread`, `idle-thread-stubborn`, `server-crash`, `stop-isolation`,
+`approval`, `user-input`, `guardian-crash`.
 
 Each uses a separate temporary HOME and a loopback mock provider with the real
 official app-server and proxy. It asserts nonce/protocol behavior, exact worker

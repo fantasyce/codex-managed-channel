@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 - 2026-09-17
 
 - Add fixed per-client, single-writer sessions with bounded reattachment to the
   same official worker; retain legacy entry mode without silently upgrading it.
@@ -14,6 +14,10 @@
   isolation, expiry, resource limits, crashes and pending user interactions.
 - Reclaim idle thread resources in place with `thread/unsubscribe`; retain the
   connection on success and use bounded disconnect cleanup only as fallback.
+- Document that descendant FD pressure is not yet mapped to individual tool
+  calls: v0.2.0 still uses whole-runtime cleanup at the hard app-server limit.
+- Include the project license and target-specific third-party dependency license
+  texts in every binary release archive.
 
 ## 0.1.0 - 2026-09-05
 

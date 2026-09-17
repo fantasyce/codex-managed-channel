@@ -8,7 +8,7 @@ Usage: install.sh --remote ADMIN_ALIAS --alias MANAGED_ALIAS [options]
 Options:
   --remote ALIAS       Existing administrative SSH alias
   --alias ALIAS        New managed SSH alias
-  --version VERSION    Release tag (default: v0.1.0)
+  --version VERSION    Release tag (default: v0.2.0)
   --repository OWNER/REPOSITORY
                        GitHub repository override
   --key PATH           Reuse an existing dedicated private key
@@ -18,7 +18,7 @@ EOF
 
 remote=
 managed_alias=
-version=v0.1.0
+version=v0.2.0
 repository=${CODEX_MANAGED_REPOSITORY:-fantasyce/codex-managed-channel}
 key_path=
 while [ "$#" -gt 0 ]; do
@@ -90,7 +90,7 @@ check_host_ip=$(printf '%s\n' "$resolved" | awk '$1 == "checkhostip" {print $2; 
     exit 1
 }
 [ -z "$proxy_command" ] || [ "$proxy_command" = none ] || {
-    printf 'ProxyCommand is outside the version 0.1 support boundary\n' >&2
+    printf 'ProxyCommand is outside the version 0.2 support boundary\n' >&2
     exit 1
 }
 ssh -o BatchMode=yes "$remote" true >/dev/null 2>&1 || {

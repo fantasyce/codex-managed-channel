@@ -152,6 +152,32 @@ class PrivacyScanTests(unittest.TestCase):
             self.assertIn("archive:release/unsafe.txt", result.stdout)
             self.assertNotIn(unsafe_value, result.stdout + result.stderr)
 
+    def test_accepts_sha256_digest_that_resembles_a_thread_identifier(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            digest = "01" + "a" * 62
+            (root / "MANIFEST.sha256").write_text(
+                f"{digest}  bin/example\n", encoding="utf-8"
+            )
+
+            result = scan(root)
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_scans_the_path_field_of_a_sha256_manifest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            unsafe_path = "/".join(("", "Users", "alice", "secret"))
+            (root / "MANIFEST.sha256").write_text(
+                f"{'a' * 64}  {unsafe_path}\n", encoding="utf-8"
+            )
+
+            result = scan(root)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("home", result.stdout)
+            self.assertNotIn(unsafe_path, result.stdout + result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
