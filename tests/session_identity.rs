@@ -16,9 +16,11 @@ fn rejects_client_identity_path_escape_before_bootstrap() {
 #[test]
 fn stop_of_absent_client_is_idempotent() {
     let temp = tempfile::tempdir().unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_codex-managed-entry"))
+    let entry = env!("CARGO_BIN_EXE_codex-managed-entry");
+    let output = Command::new(entry)
         .args(["--stop-client", "laptop"])
         .env_remove("SSH_ORIGINAL_COMMAND")
+        .env("CODEX_MANAGED_CODEX_BIN", entry)
         .env("CODEX_MANAGED_ROOT", temp.path().join("state"))
         .output()
         .unwrap();
