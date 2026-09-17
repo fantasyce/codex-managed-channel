@@ -15,6 +15,42 @@ const MAX_MESSAGE_BYTES: usize = 64 * 1024 * 1024;
 const WEBSOCKET_KEY: &str = "dGhlIHNhbXBsZSBub25jZQ==";
 const WEBSOCKET_ACCEPT: &str = "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=";
 
+/// Read-only and fail closed. A partial inventory or unknown status is not idle.
+pub(crate) fn runtime_is_idle(path: &Path, timeout: Duration) -> bool {
+    let check = || -> Result<bool> {
+        let mut rpc = RpcClient::connect(path, timeout, "codex-managed-idle-check")?;
+        let mut cursor = Value::Null;
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..128 {
+            let page = rpc
+                .request("thread/loaded/list", json!({"cursor":cursor,"limit":100}))
+                .map_err(rpc_failure_to_anyhow)?;
+            let ids = page
+                .get("data")
+                .and_then(Value::as_array)
+                .context("missing inventory")?;
+            for id in ids {
+                let id = id.as_str().context("invalid loaded thread id")?;
+                if !seen.insert(id.to_owned()) || seen.len() > 4096 {
+                    return Ok(false);
+                }
+                let result = rpc
+                    .request("thread/read", json!({"threadId":id,"includeTurns":false}))
+                    .map_err(rpc_failure_to_anyhow)?;
+                if thread_status(&result) != Some("idle") {
+                    return Ok(false);
+                }
+            }
+            cursor = page.get("nextCursor").cloned().context("missing cursor")?;
+            if cursor.is_null() {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    };
+    check().unwrap_or(false)
+}
+
 #[derive(Debug, Clone)]
 pub struct TakeoverConfig {
     pub isolated_socket: PathBuf,
@@ -135,15 +171,38 @@ enum RpcFailure {
 struct RpcClient {
     stream: UnixStream,
     next_id: u64,
+    deadline: Instant,
 }
 
 impl RpcClient {
+    fn read_exact(&mut self, mut bytes: &mut [u8]) -> Result<()> {
+        while !bytes.is_empty() {
+            let left = self
+                .deadline
+                .checked_duration_since(Instant::now())
+                .context("control deadline expired")?;
+            self.stream.set_read_timeout(Some(left))?;
+            match self.stream.read(bytes) {
+                Ok(0) => bail!("control socket closed"),
+                Ok(n) => {
+                    bytes = &mut bytes[n..];
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(e) => return Err(e.into()),
+            }
+        }
+        Ok(())
+    }
     fn connect(path: &Path, timeout: Duration, name: &str) -> Result<Self> {
         let stream = UnixStream::connect(path)
             .with_context(|| format!("failed to connect to {}", path.display()))?;
         stream.set_read_timeout(Some(timeout))?;
         stream.set_write_timeout(Some(timeout))?;
-        let mut client = Self { stream, next_id: 1 };
+        let mut client = Self {
+            stream,
+            next_id: 1,
+            deadline: Instant::now() + timeout,
+        };
         client.upgrade()?;
         client
             .request(
@@ -169,7 +228,7 @@ impl RpcClient {
             if response.len() >= 16 * 1024 {
                 bail!("websocket upgrade response exceeded limit");
             }
-            self.stream.read_exact(&mut byte)?;
+            self.read_exact(&mut byte)?;
             response.push(byte[0]);
         }
         let response = String::from_utf8(response).context("upgrade response was not UTF-8")?;
@@ -256,6 +315,9 @@ impl RpcClient {
                 0xA => continue,
                 _ => continue,
             }
+            if fragments.len() > MAX_MESSAGE_BYTES {
+                bail!("fragmented control response exceeded limit");
+            }
             if final_frame {
                 return serde_json::from_slice(&fragments)
                     .context("control socket returned invalid JSON");
@@ -264,19 +326,25 @@ impl RpcClient {
     }
 
     fn read_frame(&mut self) -> Result<(bool, u8, Vec<u8>)> {
+        let remaining = self
+            .deadline
+            .checked_duration_since(Instant::now())
+            .context("control deadline expired")?;
+        self.stream.set_read_timeout(Some(remaining))?;
+        self.stream.set_write_timeout(Some(remaining))?;
         let mut head = [0u8; 2];
-        self.stream.read_exact(&mut head)?;
+        self.read_exact(&mut head)?;
         if head[0] & 0x70 != 0 {
             bail!("control socket sent websocket frame with reserved bits");
         }
         let mut length = (head[1] & 0x7f) as usize;
         if length == 126 {
             let mut bytes = [0u8; 2];
-            self.stream.read_exact(&mut bytes)?;
+            self.read_exact(&mut bytes)?;
             length = u16::from_be_bytes(bytes) as usize;
         } else if length == 127 {
             let mut bytes = [0u8; 8];
-            self.stream.read_exact(&mut bytes)?;
+            self.read_exact(&mut bytes)?;
             let value = u64::from_be_bytes(bytes);
             if value > MAX_MESSAGE_BYTES as u64 {
                 bail!("control response exceeded message limit");
@@ -289,10 +357,10 @@ impl RpcClient {
         let masked = head[1] & 0x80 != 0;
         let mut mask = [0u8; 4];
         if masked {
-            self.stream.read_exact(&mut mask)?;
+            self.read_exact(&mut mask)?;
         }
         let mut payload = vec![0u8; length];
-        self.stream.read_exact(&mut payload)?;
+        self.read_exact(&mut payload)?;
         if masked {
             for (index, byte) in payload.iter_mut().enumerate() {
                 *byte ^= mask[index % 4];

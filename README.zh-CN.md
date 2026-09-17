@@ -28,7 +28,8 @@ flowchart LR
     C --> D[官方 Codex app-server]
     D --> E[远程工作区]
     D --> F[官方 Computer Use 与插件]
-    C -->|归档、断连、闲置或句柄压力| G[限定进程组回收]
+    C -->|闲置或软句柄压力| H[thread unsubscribe 原位回收]
+    C -->|归档、断连、硬阈值或回收失败| G[限定进程组回收]
 ```
 
 ## 快速安装
@@ -52,6 +53,9 @@ curl -fsSL https://raw.githubusercontent.com/fantasyce/codex-managed-channel/v0.
 
 ## 已验证内容
 
+开发中的有界重连机制及独立验收边界见[有界恢复说明](docs/bounded-recovery.md)。
+它要求每个客户端独立 alias/key；现有 v0.1.0 安装不会自动获得此功能。
+
 0.1.0 已通过 Rust 与安装器测试、严格 lint、源码与 Git 历史隐私扫描、校验和
 安装、重复安装、官方 app-server 初始化、官方 Computer Use 只读调用、退出后
 进程与 socket 清零以及精确卸载。验收只使用一次性标识符，不保留机器或账号
@@ -64,6 +68,7 @@ curl -fsSL https://raw.githubusercontent.com/fantasyce/codex-managed-channel/v0.
 - 不覆盖其他 SSH Host 或授权行；
 - 只回收本通道创建并验证过的进程组；
 - 活跃对话不会被闲置策略回收；
+- 空闲线程优先通过 `thread/unsubscribe` 回收 MCP、PIPE 和 FD，不主动断开 SSH；
 - 不支持的 SSH 或 Desktop 布局会停止安装。
 
 详细内容见[架构](docs/architecture.md)、[安全模型](docs/security-model.md)、

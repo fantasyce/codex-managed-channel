@@ -34,6 +34,20 @@ def run_library(command: str, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 class InstallerTests(unittest.TestCase):
+    def test_alias_cannot_name_the_state_directory_or_its_parent(self):
+        for alias in (".", ".."):
+            self.assertNotEqual(run_library("validate_alias", alias).returncode, 0)
+    def test_rendered_config_detects_dead_transport_without_sharing_master(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "config"
+            result = run_library("write_managed_config", str(config), "example-managed", "example.invalid", "user", "22", "/tmp/example-key", "none")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            resolved = subprocess.run(["ssh", "-G", "-F", str(config), "example-managed"], capture_output=True, text=True)
+            self.assertEqual(resolved.returncode, 0)
+            options = dict(line.split(" ", 1) for line in resolved.stdout.splitlines())
+            self.assertEqual(options["serveraliveinterval"], "15")
+            self.assertEqual(options["serveralivecountmax"], "3")
+            self.assertEqual(options["controlmaster"], "false")
     def assert_no_mutation(self, home: Path):
         self.assertFalse((home / ".ssh" / "codex-managed-channel").exists())
         self.assertFalse((home / ".ssh" / "config").exists())

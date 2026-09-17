@@ -13,6 +13,7 @@ const PRIVATE_ENTRIES: &[&str] = &[
     "log",
     "logs",
     "process_manager",
+    "session_index.jsonl",
     "tmp",
     ".tmp",
 ];

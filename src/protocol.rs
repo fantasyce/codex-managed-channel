@@ -22,7 +22,9 @@ pub struct ResumeAttempt {
 enum PendingRequest {
     ThreadOpen(Option<String>),
     ThreadRemove { thread_id: String, archive: bool },
-    TurnStart,
+    ThreadUnsubscribe,
+    TurnStart(Option<String>),
+    Busy,
 }
 
 #[derive(Debug, Default)]
@@ -30,6 +32,11 @@ struct ProtocolState {
     pending: HashMap<String, PendingRequest>,
     live_threads: HashSet<String>,
     archive_empty_epoch: u64,
+    active: HashSet<(String, String)>,
+    terminal: HashSet<(String, String)>,
+    busy_threads: HashSet<String>,
+    unsubscribe_completed: usize,
+    unsubscribe_failed: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -40,6 +47,8 @@ pub struct ProtocolSnapshot {
     pub client_idle: Duration,
     pub live_threads: usize,
     pub archive_empty_epoch: u64,
+    pub unsubscribe_completed: usize,
+    pub unsubscribe_failed: usize,
 }
 
 pub struct ProtocolObserver {
@@ -119,6 +128,10 @@ impl ProtocolObserver {
                 .fetch_add(1, Ordering::Relaxed);
         }
         let request_id = value.get("id").and_then(request_key);
+        if matches!(method, "turn/start" | "command/exec" | "review/start") && request_id.is_none()
+        {
+            self.parse_failures.fetch_add(1, Ordering::Relaxed);
+        }
         let thread_id = || {
             value
                 .pointer("/params/threadId")
@@ -144,9 +157,15 @@ impl ProtocolObserver {
                 thread_id,
                 archive: false,
             }),
-            "turn/start" => {
-                self.active_turns.fetch_add(1, Ordering::Relaxed);
-                Some(PendingRequest::TurnStart)
+            "thread/unsubscribe" => Some(PendingRequest::ThreadUnsubscribe),
+            "command/exec" => Some(PendingRequest::Busy),
+            "turn/start" | "review/start" => {
+                let id = thread_id();
+                if id.is_none() {
+                    self.active_turns.fetch_add(1, Ordering::Relaxed);
+                    self.parse_failures.fetch_add(1, Ordering::Relaxed);
+                }
+                Some(PendingRequest::TurnStart(id))
             }
             _ => None,
         };
@@ -175,14 +194,81 @@ impl ProtocolObserver {
         let Some(method) = value.get("method").and_then(Value::as_str) else {
             return;
         };
-        if matches!(method, "turn/completed" | "turn/failed" | "turn/cancelled") {
-            decrement(&self.active_turns);
+        if matches!(
+            method,
+            "turn/started" | "turn/completed" | "turn/failed" | "turn/cancelled"
+        ) {
+            if let (Some(thread), Some(turn)) = (
+                value.pointer("/params/threadId").and_then(Value::as_str),
+                value.pointer("/params/turn/id").and_then(Value::as_str),
+            ) {
+                let mut state = self.state.lock().expect("protocol state mutex poisoned");
+                let key = (thread.to_owned(), turn.to_owned());
+                if method == "turn/started" {
+                    if !state.terminal.contains(&key) {
+                        state.active.insert(key);
+                    }
+                } else {
+                    state.active.remove(&key);
+                    state.busy_threads.remove(thread);
+                    if state.terminal.len() < 4096 {
+                        state.terminal.insert(key);
+                    } else {
+                        self.parse_failures.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+            } else {
+                self.parse_failures.fetch_add(1, Ordering::Relaxed);
+                if method != "turn/started" {
+                    decrement(&self.active_turns);
+                }
+            }
+        }
+        if method == "thread/status/changed" {
+            let mut state = self.state.lock().expect("protocol state mutex poisoned");
+            if let Some(id) = value.pointer("/params/threadId").and_then(Value::as_str) {
+                match value.pointer("/params/status/type").and_then(Value::as_str) {
+                    Some("active") => {
+                        state.busy_threads.insert(id.to_owned());
+                    }
+                    Some("idle" | "notLoaded") => {
+                        state.busy_threads.remove(id);
+                    }
+                    _ => {
+                        self.parse_failures.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+            }
+        }
+        if method == "thread/closed"
+            && let Some(id) = value.pointer("/params/threadId").and_then(Value::as_str)
+        {
+            let mut state = self.state.lock().expect("protocol state mutex poisoned");
+            state.live_threads.remove(id);
+            state.busy_threads.remove(id);
+            state.active.retain(|(thread_id, _)| thread_id != id);
         }
     }
 
     fn finish_request(&self, pending: PendingRequest, success: bool, response: &Value) {
         match pending {
-            PendingRequest::TurnStart if !success => decrement(&self.active_turns),
+            PendingRequest::TurnStart(None) if !success => decrement(&self.active_turns),
+            PendingRequest::TurnStart(Some(thread)) if success => {
+                if let Some(turn) = response.pointer("/result/turn/id").and_then(Value::as_str) {
+                    let mut state = self.state.lock().expect("protocol state mutex poisoned");
+                    let key = (thread, turn.to_owned());
+                    if !state.terminal.contains(&key)
+                        && response
+                            .pointer("/result/turn/status")
+                            .and_then(Value::as_str)
+                            == Some("inProgress")
+                    {
+                        state.active.insert(key);
+                    }
+                } else {
+                    self.parse_failures.fetch_add(1, Ordering::Relaxed);
+                }
+            }
             PendingRequest::ThreadOpen(fallback) if success => {
                 let thread_id = response
                     .pointer("/result/thread/id")
@@ -190,11 +276,30 @@ impl ProtocolObserver {
                     .map(str::to_owned)
                     .or(fallback);
                 if let Some(thread_id) = thread_id {
-                    self.state
-                        .lock()
-                        .expect("protocol state mutex poisoned")
-                        .live_threads
-                        .insert(thread_id);
+                    let mut state = self.state.lock().expect("protocol state mutex poisoned");
+                    state.live_threads.insert(thread_id.clone());
+                    if response
+                        .pointer("/result/thread/status/type")
+                        .and_then(Value::as_str)
+                        == Some("active")
+                    {
+                        state.busy_threads.insert(thread_id.clone());
+                    }
+                    if let Some(turns) = response
+                        .pointer("/result/thread/turns")
+                        .and_then(Value::as_array)
+                    {
+                        for turn in turns {
+                            if turn.get("status").and_then(Value::as_str) == Some("inProgress")
+                                && let Some(id) = turn.get("id").and_then(Value::as_str)
+                            {
+                                let key = (thread_id.clone(), id.to_owned());
+                                if !state.terminal.contains(&key) {
+                                    state.active.insert(key);
+                                }
+                            }
+                        }
+                    }
                 }
             }
             PendingRequest::ThreadRemove { thread_id, archive } if success => {
@@ -204,12 +309,38 @@ impl ProtocolObserver {
                     state.archive_empty_epoch = state.archive_empty_epoch.saturating_add(1);
                 }
             }
+            PendingRequest::ThreadUnsubscribe => {
+                let mut state = self.state.lock().expect("protocol state mutex poisoned");
+                if success
+                    && response.pointer("/result/status").and_then(Value::as_str)
+                        == Some("unsubscribed")
+                {
+                    state.unsubscribe_completed = state.unsubscribe_completed.saturating_add(1);
+                } else {
+                    state.unsubscribe_failed = state.unsubscribe_failed.saturating_add(1);
+                }
+            }
             _ => {}
         }
     }
 
     pub fn active_turns(&self) -> usize {
+        let state = self.state.lock().expect("protocol state mutex poisoned");
+        self.active_count(&state)
+    }
+    fn active_count(&self, state: &ProtocolState) -> usize {
         self.active_turns.load(Ordering::Relaxed)
+            + state.active.len()
+            + state
+                .busy_threads
+                .iter()
+                .filter(|id| !state.active.iter().any(|(t, _)| t == *id))
+                .count()
+            + state
+                .pending
+                .values()
+                .filter(|p| matches!(p, PendingRequest::TurnStart(Some(_)) | PendingRequest::Busy))
+                .count()
     }
     pub fn take_resume_attempts(&self) -> Vec<ResumeAttempt> {
         self.resume_attempts
@@ -227,10 +358,22 @@ impl ProtocolObserver {
             .expect("activity mutex poisoned")
             .elapsed()
     }
+    pub fn idle_thread_ids(&self) -> Vec<String> {
+        let state = self.state.lock().expect("protocol state mutex poisoned");
+        let mut ids: Vec<String> = state
+            .live_threads
+            .iter()
+            .filter(|id| !state.busy_threads.contains(*id))
+            .filter(|id| !state.active.iter().any(|(thread_id, _)| thread_id == *id))
+            .cloned()
+            .collect();
+        ids.sort();
+        ids
+    }
     pub fn snapshot(&self) -> ProtocolSnapshot {
         let state = self.state.lock().expect("protocol state mutex poisoned");
         ProtocolSnapshot {
-            active_turns: self.active_turns(),
+            active_turns: self.active_count(&state),
             reliable: self.parse_failures() == 0,
             client_activity_generation: self.client_activity_generation.load(Ordering::Relaxed),
             client_idle: self
@@ -240,6 +383,8 @@ impl ProtocolObserver {
                 .elapsed(),
             live_threads: state.live_threads.len(),
             archive_empty_epoch: state.archive_empty_epoch,
+            unsubscribe_completed: state.unsubscribe_completed,
+            unsubscribe_failed: state.unsubscribe_failed,
         }
     }
 }

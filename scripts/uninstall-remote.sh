@@ -12,7 +12,7 @@ while [ "$#" -gt 0 ]; do
         *) printf 'unknown remote-uninstall option\n' >&2; exit 2 ;;
     esac
 done
-case $managed_alias in ''|*[!A-Za-z0-9._-]*) printf 'invalid managed alias\n' >&2; exit 2 ;; esac
+case $managed_alias in ''|.|..|*[!A-Za-z0-9._-]*) printf 'invalid managed alias\n' >&2; exit 2 ;; esac
 printf '%s\n' "$version" | awk '/^v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$/ {ok=1} END {exit ok ? 0 : 1}' || {
     printf 'invalid version\n' >&2
     exit 2
@@ -25,6 +25,11 @@ fi
 install_root=${CODEX_MANAGED_INSTALL_ROOT:-"$HOME/.local/libexec/codex-managed-channel/$version"}
 authorized_keys=${CODEX_MANAGED_AUTHORIZED_KEYS:-"$HOME/.ssh/authorized_keys"}
 marker="codex-managed-channel:$managed_alias"
+entry="$install_root/bin/codex-managed-entry"
+state_root="$HOME/.local/state/codex-managed-channel/$managed_alias"
+if [ -d "$state_root/sessions" ] && [ -x "$entry" ]; then
+    (unset SSH_ORIGINAL_COMMAND; CODEX_MANAGED_ROOT="$state_root" "$entry" --stop-client desktop)
+fi
 if [ -f "$authorized_keys" ]; then
     auth_dir=$(dirname "$authorized_keys")
     temporary="$auth_dir/.authorized_keys.$$.tmp"
@@ -35,7 +40,7 @@ if [ -f "$authorized_keys" ]; then
 fi
 
 entry="$install_root/bin/codex-managed-entry"
-if [ -x "$entry" ]; then
+if [ -x "$entry" ] && [ ! -d "$state_root/sessions" ]; then
     ps -axo pid=,command= | awk -v entry="$entry" '$2 == entry { print $1 }' | while IFS= read -r pid; do
         [ -n "$pid" ] && kill -TERM "$pid" 2>/dev/null || true
     done

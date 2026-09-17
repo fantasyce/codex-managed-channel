@@ -29,6 +29,7 @@ class PrivacyScanTests(unittest.TestCase):
             "private_key": "BEGIN OPENSSH " + "PRIVATE KEY",
             "public_key": "ssh-ed25519 " + "A" * 80,
             "token": "gh" + "p_" + "A" * 40,
+            "email": "maintainer" + "@personal.test",
         }
         for rule, value in bad_values.items():
             with self.subTest(rule=rule), tempfile.TemporaryDirectory() as tmp:
@@ -82,6 +83,56 @@ class PrivacyScanTests(unittest.TestCase):
             result = scan(root, "--history")
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("history:removed.txt", result.stdout)
+
+    def test_rejects_personal_email_in_commit_metadata_without_echoing_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            exposed_email = "maintainer" + "@personal.test"
+            subprocess.run(["git", "init", "-q", "-b", "main"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Test User"], cwd=root, check=True)
+            subprocess.run(
+                ["git", "config", "user.email", exposed_email], cwd=root, check=True
+            )
+            (root / "safe.txt").write_text("neutral content\n", encoding="utf-8")
+            subprocess.run(["git", "add", "safe.txt"], cwd=root, check=True)
+            subprocess.run(["git", "commit", "-q", "-m", "safe content"], cwd=root, check=True)
+
+            result = scan(root, "--history")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("commit_email", result.stdout)
+            self.assertNotIn(exposed_email, result.stdout + result.stderr)
+
+    def test_rejects_personal_email_in_commit_message_without_echoing_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            exposed_email = "reviewer" + "@personal.test"
+            subprocess.run(["git", "init", "-q", "-b", "main"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Test User"], cwd=root, check=True)
+            subprocess.run(
+                ["git", "config", "user.email", "123+test@users.noreply.github.com"],
+                cwd=root,
+                check=True,
+            )
+            (root / "safe.txt").write_text("neutral content\n", encoding="utf-8")
+            subprocess.run(["git", "add", "safe.txt"], cwd=root, check=True)
+            subprocess.run(
+                [
+                    "git",
+                    "commit",
+                    "-q",
+                    "-m",
+                    "safe content",
+                    "-m",
+                    f"Co-authored-by: Reviewer <{exposed_email}>",
+                ],
+                cwd=root,
+                check=True,
+            )
+
+            result = scan(root, "--history")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("history:commit:", result.stdout)
+            self.assertNotIn(exposed_email, result.stdout + result.stderr)
 
     def test_rejects_sensitive_content_inside_release_archive(self):
         with tempfile.TemporaryDirectory() as tmp:

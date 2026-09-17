@@ -19,6 +19,26 @@ fn main() {
 }
 
 fn real_main() -> Result<i32> {
+    let args: Vec<String> = env::args().skip(1).collect();
+    let client_id = match args.as_slice() {
+        [] => None,
+        [flag, id] if flag == "--client-id" => {
+            codex_managed_channel::session::validate_id(id)?;
+            Some(id.as_str())
+        }
+        [flag, id]
+            if flag == "--session-owner" && env::var_os("SSH_ORIGINAL_COMMAND").is_none() =>
+        {
+            return codex_managed_channel::session::own(SupervisorConfig::from_env()?, id);
+        }
+        [flag, id] if flag == "--stop-client" && env::var_os("SSH_ORIGINAL_COMMAND").is_none() => {
+            return codex_managed_channel::session::stop(SupervisorConfig::from_env()?, id);
+        }
+        [flag] if flag == "--session-worker" && env::var_os("SSH_ORIGINAL_COMMAND").is_none() => {
+            return codex_managed_channel::session::guard_worker(SupervisorConfig::from_env()?);
+        }
+        _ => anyhow::bail!("unsupported entry arguments"),
+    };
     let original = env::var("SSH_ORIGINAL_COMMAND").context("SSH_ORIGINAL_COMMAND is missing")?;
     let request = parse_original_command(&original)?;
     io::stdout().write_all(&request.nonce)?;
@@ -33,6 +53,9 @@ fn real_main() -> Result<i32> {
                 .context("failed to run the resolved Codex version probe")?;
             Ok(status.code().unwrap_or(1))
         }
-        BootstrapAction::AppServerProxy => run(config),
+        BootstrapAction::AppServerProxy => match client_id {
+            Some(id) => codex_managed_channel::session::attach(config, id),
+            None => run(config),
+        },
     }
 }

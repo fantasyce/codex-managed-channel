@@ -4,5 +4,6 @@ pub mod managed_home;
 pub mod marketplace;
 pub mod protocol;
 pub mod reclaim;
+pub mod session;
 pub mod supervisor;
 pub mod takeover;

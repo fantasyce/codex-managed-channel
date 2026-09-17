@@ -14,7 +14,7 @@ while [ "$#" -gt 0 ]; do
         *) printf 'unknown remote-install option\n' >&2; exit 2 ;;
     esac
 done
-case $managed_alias in ''|*[!A-Za-z0-9._-]*) printf 'invalid managed alias\n' >&2; exit 2 ;; esac
+case $managed_alias in ''|.|..|*[!A-Za-z0-9._-]*) printf 'invalid managed alias\n' >&2; exit 2 ;; esac
 printf '%s\n' "$version" | awk '/^v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$/ {ok=1} END {exit ok ? 0 : 1}' || {
     printf 'invalid version\n' >&2
     exit 2
@@ -47,6 +47,20 @@ case "$install_root:$state_root" in
     *[!A-Za-z0-9_./:-]*) printf 'install path contains unsupported characters\n' >&2; exit 1 ;;
 esac
 
+# A dedicated key identifies exactly one client namespace. Reusing it in
+# another authorized_keys entry makes sshd's matching order ambiguous.
+marker="codex-managed-channel:$managed_alias"
+key_data=$(printf '%s\n' "$key_line" | awk '{print $2}')
+if [ -f "$authorized_keys" ]; then
+    awk -v key="$key_data" -v marker="$marker" '
+        { for (i=1; i<NF; i++) if ($i == "ssh-ed25519" && $(i+1) == key && $NF != marker) bad=1 }
+        END { exit bad ? 1 : 0 }
+    ' "$authorized_keys" || { printf 'dedicated key already belongs to another authorization\n' >&2; exit 1; }
+fi
+
+mkdir -p "$state_root"
+chmod 700 "$state_root"
+
 mkdir -p "$install_root/bin" "$install_root/scripts" "$install_root/installs"
 chmod 700 "$install_root" "$install_root/bin" "$install_root/scripts" "$install_root/installs"
 for relative in bin/codex-managed-entry bin/codex-managed-preflight scripts/uninstall-remote.sh; do
@@ -73,7 +87,7 @@ if [ -f "$authorized_keys" ]; then
 else
     : > "$temporary"
 fi
-printf 'no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty,no-user-rc,command="env CODEX_MANAGED_ROOT=%s %s/bin/codex-managed-entry" %s %s\n' \
+printf 'no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty,no-user-rc,command="env CODEX_MANAGED_ROOT=%s %s/bin/codex-managed-entry --client-id desktop" %s %s\n' \
     "$state_root" "$install_root" "$key_line" "$marker" >> "$temporary"
 chmod 600 "$temporary"
 mv "$temporary" "$authorized_keys"

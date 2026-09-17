@@ -191,6 +191,91 @@ fn user_intent_requests_advance_client_activity_generation() {
 }
 
 #[test]
+fn idle_thread_ids_exclude_busy_threads_and_are_stable() {
+    let observer = ProtocolObserver::default();
+    for (request_id, thread_id) in [(1, "thread-b"), (2, "thread-a")] {
+        observer.observe(
+            Direction::ClientToServer,
+            format!(
+                "{{\"id\":{request_id},\"method\":\"thread/resume\",\"params\":{{\"threadId\":\"{thread_id}\"}}}}\n"
+            )
+            .as_bytes(),
+        );
+        observer.observe(
+            Direction::ServerToClient,
+            format!(
+                "{{\"id\":{request_id},\"result\":{{\"thread\":{{\"id\":\"{thread_id}\",\"status\":{{\"type\":\"idle\"}}}}}}}}\n"
+            )
+            .as_bytes(),
+        );
+    }
+    observer.observe(
+        Direction::ServerToClient,
+        b"{\"method\":\"thread/status/changed\",\"params\":{\"threadId\":\"thread-b\",\"status\":{\"type\":\"active\",\"activeFlags\":[]}}}\n",
+    );
+
+    assert_eq!(observer.idle_thread_ids(), vec!["thread-a"]);
+}
+
+#[test]
+fn unsubscribe_response_keeps_thread_live_until_closed_notification() {
+    let observer = ProtocolObserver::default();
+    observer.observe(
+        Direction::ClientToServer,
+        b"{\"id\":1,\"method\":\"thread/resume\",\"params\":{\"threadId\":\"thread-a\"}}\n",
+    );
+    observer.observe(
+        Direction::ServerToClient,
+        b"{\"id\":1,\"result\":{\"thread\":{\"id\":\"thread-a\"}}}\n",
+    );
+    observer.observe(
+        Direction::ClientToServer,
+        b"{\"id\":\"managed-1\",\"method\":\"thread/unsubscribe\",\"params\":{\"threadId\":\"thread-a\"}}\n",
+    );
+    observer.observe(
+        Direction::ServerToClient,
+        b"{\"id\":\"managed-1\",\"result\":{\"status\":\"unsubscribed\"}}\n",
+    );
+    let snapshot = observer.snapshot();
+    assert_eq!(snapshot.unsubscribe_completed, 1);
+    assert_eq!(snapshot.unsubscribe_failed, 0);
+    assert_eq!(observer.idle_thread_ids(), vec!["thread-a"]);
+
+    observer.observe(
+        Direction::ServerToClient,
+        b"{\"method\":\"thread/closed\",\"params\":{\"threadId\":\"thread-a\"}}\n",
+    );
+    assert!(observer.idle_thread_ids().is_empty());
+    assert_eq!(observer.snapshot().live_threads, 0);
+}
+
+#[test]
+fn failed_unsubscribe_is_counted_without_removing_thread() {
+    let observer = ProtocolObserver::default();
+    observer.observe(
+        Direction::ClientToServer,
+        b"{\"id\":1,\"method\":\"thread/resume\",\"params\":{\"threadId\":\"thread-a\"}}\n",
+    );
+    observer.observe(
+        Direction::ServerToClient,
+        b"{\"id\":1,\"result\":{\"thread\":{\"id\":\"thread-a\"}}}\n",
+    );
+    observer.observe(
+        Direction::ClientToServer,
+        b"{\"id\":\"managed-2\",\"method\":\"thread/unsubscribe\",\"params\":{\"threadId\":\"thread-a\"}}\n",
+    );
+    observer.observe(
+        Direction::ServerToClient,
+        b"{\"id\":\"managed-2\",\"error\":{\"code\":-1,\"message\":\"no\"}}\n",
+    );
+
+    let snapshot = observer.snapshot();
+    assert_eq!(snapshot.unsubscribe_completed, 0);
+    assert_eq!(snapshot.unsubscribe_failed, 1);
+    assert_eq!(snapshot.live_threads, 1);
+}
+
+#[test]
 fn observes_lifecycle_inside_websocket_text_frames() {
     let observer = ProtocolObserver::default();
     observer.observe(

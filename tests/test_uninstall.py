@@ -1,6 +1,8 @@
 import base64
 import hashlib
 import os
+import re
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -24,6 +26,27 @@ def fake_public_key() -> str:
 
 
 class RemoteLifecycleTests(unittest.TestCase):
+    def test_installed_forced_command_selects_a_fixed_client_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home, bundle, auth, install_root, key, environment = self.prepare(Path(tmp))
+            result = self.install(bundle, key, environment)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            recorded = Path(tmp) / "args"
+            executable(install_root / "bin/codex-managed-entry", f"#!/bin/sh\nprintf '%s\\n' \"$@\" > '{recorded}'\n")
+            command = re.search(r'command="([^"]+)"', auth.read_text()).group(1)
+            subprocess.run(shlex.split(command), env=environment, check=True)
+            self.assertEqual(recorded.read_text().splitlines(), ["--client-id", "desktop"])
+            state = home / ".local/state/codex-managed-channel/example-managed"
+            self.assertEqual(state.stat().st_mode & 0o777, 0o700)
+
+    def test_one_key_cannot_be_registered_for_two_managed_identities(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _, bundle, auth, _, key, environment = self.prepare(Path(tmp))
+            self.assertEqual(self.install(bundle, key, environment).returncode, 0)
+            before = auth.read_bytes()
+            result = subprocess.run(["/bin/sh", str(REMOTE_INSTALLER), "--bundle", str(bundle), "--public-key", str(key), "--alias", "second-client"], env=environment, capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(auth.read_bytes(), before)
     def prepare(self, root: Path):
         home = root / "home"
         bundle = root / "bundle"

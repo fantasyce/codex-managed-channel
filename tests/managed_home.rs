@@ -1,5 +1,7 @@
+use codex_managed_channel::managed_home::prepare_managed_home;
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{PermissionsExt, symlink};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 #[test]
@@ -154,4 +156,135 @@ fn isolated_server_uses_a_sanitized_managed_config_without_changing_the_real_one
         fs::read_to_string(real_codex_home.join("config.toml")).unwrap(),
         real_config
     );
+}
+
+struct ManagedHomeFixture {
+    _temp: tempfile::TempDir,
+    os_home: PathBuf,
+    real_codex_home: PathBuf,
+    managed_root: PathBuf,
+    marketplace: PathBuf,
+    bundled_marketplace: PathBuf,
+}
+
+impl ManagedHomeFixture {
+    fn new() -> Self {
+        let temp = tempfile::tempdir().unwrap();
+        let os_home = temp.path().to_path_buf();
+        let real_codex_home = os_home.join(".codex");
+        fs::create_dir_all(&real_codex_home).unwrap();
+        fs::write(
+            real_codex_home.join("config.toml"),
+            "model = \"gpt-test\"\n",
+        )
+        .unwrap();
+        fs::create_dir_all(real_codex_home.join("computer-use/Codex Computer Use.app")).unwrap();
+
+        let desktop_resources = os_home.join("Applications/ChatGPT.app/Contents/Resources");
+        fs::create_dir_all(desktop_resources.join("cua_node/bin")).unwrap();
+        fs::create_dir_all(desktop_resources.join("cua_node/lib/node_modules")).unwrap();
+        fs::write(desktop_resources.join("codex"), "test").unwrap();
+        fs::write(desktop_resources.join("cua_node/bin/node"), "test").unwrap();
+        fs::write(desktop_resources.join("cua_node/bin/node_repl"), "test").unwrap();
+
+        let marketplace = os_home.join("marketplace");
+        let bundled_marketplace = os_home.join("bundled-marketplace");
+        let bundled_plugin = bundled_marketplace.join("plugins/unified-computer-use");
+        fs::create_dir_all(&bundled_plugin).unwrap();
+        fs::write(
+            bundled_plugin.join(".mcp.json"),
+            r#"{"mcpServers":{"cua_repl":{"command":"node","args":[],"enabled":false}}}"#,
+        )
+        .unwrap();
+
+        Self {
+            managed_root: os_home.join(".codex-managed"),
+            _temp: temp,
+            os_home,
+            real_codex_home,
+            marketplace,
+            bundled_marketplace,
+        }
+    }
+
+    fn prepare(&self) -> anyhow::Result<PathBuf> {
+        prepare_managed_home(
+            &self.os_home,
+            &self.real_codex_home,
+            &self.managed_root,
+            &self.marketplace,
+            &self.bundled_marketplace,
+        )
+    }
+}
+
+#[test]
+fn fresh_session_index_is_not_shared_into_managed_home() {
+    let fixture = ManagedHomeFixture::new();
+    let real_index = fixture.real_codex_home.join("session_index.jsonl");
+    fs::write(&real_index, "real-index\n").unwrap();
+
+    let managed_home = fixture.prepare().unwrap();
+    let managed_index = managed_home.join("session_index.jsonl");
+
+    assert!(!managed_index.exists());
+    assert_eq!(fs::read_to_string(&real_index).unwrap(), "real-index\n");
+}
+
+#[test]
+fn runtime_replaced_session_index_remains_private_on_next_prepare() {
+    let fixture = ManagedHomeFixture::new();
+    let real_index = fixture.real_codex_home.join("session_index.jsonl");
+    fs::write(&real_index, "real-index\n").unwrap();
+
+    let managed_home = fixture.managed_root.join("codex-home");
+    fs::create_dir_all(&managed_home).unwrap();
+    let managed_index = managed_home.join("session_index.jsonl");
+    symlink(&real_index, &managed_index).unwrap();
+
+    let replacement = managed_home.join(".session_index.jsonl.runtime-replacement");
+    fs::write(&replacement, "managed-runtime-index\n").unwrap();
+    fs::rename(&replacement, &managed_index).unwrap();
+    assert!(
+        !fs::symlink_metadata(&managed_index)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+
+    fixture.prepare().unwrap();
+
+    assert_eq!(
+        fs::read_to_string(&managed_index).unwrap(),
+        "managed-runtime-index\n"
+    );
+    assert_eq!(fs::read_to_string(&real_index).unwrap(), "real-index\n");
+    assert!(
+        !fs::symlink_metadata(&managed_index)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+}
+
+#[test]
+fn runtime_replaced_shared_entry_is_still_rejected() {
+    let fixture = ManagedHomeFixture::new();
+    let real_shared = fixture.real_codex_home.join("shared-entry.json");
+    fs::write(&real_shared, "real-shared\n").unwrap();
+
+    let managed_home = fixture.prepare().unwrap();
+    let managed_shared = managed_home.join("shared-entry.json");
+    let replacement = managed_home.join(".shared-entry.json.runtime-replacement");
+    fs::write(&replacement, "unexpected-local-copy\n").unwrap();
+    fs::rename(&replacement, &managed_shared).unwrap();
+
+    let error = fixture.prepare().unwrap_err();
+
+    assert!(
+        error
+            .to_string()
+            .contains("managed CODEX_HOME contains an unmanaged entry")
+    );
+    assert!(error.to_string().contains("shared-entry.json"));
 }

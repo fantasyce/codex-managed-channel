@@ -13,6 +13,20 @@ from pathlib import Path, PurePosixPath
 
 
 SKIP_PARTS = {".git", "target", "__pycache__"}
+NOREPLY_EMAIL = re.compile(
+    r"^(?:[A-Za-z0-9-]+|[0-9]+\+[A-Za-z0-9-]+)@users\.noreply\.github\.com$",
+    re.I,
+)
+GITHUB_SERVICE_EMAILS = {"actions@github.com", "noreply@github.com"}
+
+
+def safe_email(value: str) -> bool:
+    lowered = value.lower()
+    return (
+        NOREPLY_EMAIL.fullmatch(value) is not None
+        or lowered in GITHUB_SERVICE_EMAILS
+        or lowered.endswith("@example.invalid")
+    )
 
 
 def rules() -> list[tuple[str, re.Pattern[str]]]:
@@ -27,6 +41,7 @@ def rules() -> list[tuple[str, re.Pattern[str]]]:
         ("public_key", re.compile(public_key + r"[ \t]+[A-Za-z0-9+/]{40,}={0,3}")),
         ("token", re.compile(github_token + r"[A-Za-z0-9]{20,}")),
         ("token", re.compile(r"(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}")),
+        ("email", re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")),
     ]
 
 
@@ -47,7 +62,10 @@ class Scanner:
     def scan(self, label: str, data: bytes) -> None:
         for line_number, line in printable_lines(data):
             for rule, pattern in self.patterns:
-                if pattern.search(line):
+                match = pattern.search(line)
+                if match and rule == "email" and safe_email(match.group(0)):
+                    continue
+                if match:
                     self.report(rule, label, line_number)
             for literal in self.extra_patterns:
                 if literal in line:
@@ -108,6 +126,44 @@ def scan_history(scanner: Scanner, root: Path) -> None:
         scanner.scan("history:" + object_path, data)
 
 
+def scan_git_metadata(scanner: Scanner, root: Path) -> None:
+    try:
+        commits = git(root, "rev-list", "--all").decode().splitlines()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        raise SystemExit("privacy scan: unable to read Git commit metadata")
+    email_pattern = re.compile(r"<([^<>\s]+@[^<>\s]+)>")
+    for commit in commits:
+        try:
+            raw = git(root, "cat-file", "commit", commit)
+        except subprocess.CalledProcessError:
+            raise SystemExit("privacy scan: unable to read Git commit metadata")
+        headers, _, message = raw.partition(b"\n\n")
+        for line in headers.decode("utf-8", errors="replace").splitlines():
+            if not line.startswith(("author ", "committer ")):
+                continue
+            match = email_pattern.search(line)
+            if match and not safe_email(match.group(1)):
+                scanner.report("commit_email", "history:commit:" + commit[:12], 0)
+        scanner.scan("history:commit:" + commit[:12], message)
+
+    try:
+        tags = git(root, "for-each-ref", "refs/tags", "--format=%(objectname)").decode().splitlines()
+    except subprocess.CalledProcessError:
+        raise SystemExit("privacy scan: unable to read Git tag metadata")
+    for tag in tags:
+        if git(root, "cat-file", "-t", tag).strip() != b"tag":
+            continue
+        raw = git(root, "cat-file", "tag", tag)
+        headers, _, message = raw.partition(b"\n\n")
+        for line in headers.decode("utf-8", errors="replace").splitlines():
+            if not line.startswith("tagger "):
+                continue
+            match = email_pattern.search(line)
+            if match and not safe_email(match.group(1)):
+                scanner.report("tag_email", "history:tag:" + tag[:12], 0)
+        scanner.scan("history:tag:" + tag[:12], message)
+
+
 def scan_archive(scanner: Scanner, archive: Path) -> None:
     try:
         with tarfile.open(archive, mode="r:*") as bundle:
@@ -141,6 +197,7 @@ def main() -> int:
     scan_worktree(scanner, args.root, extra_file)
     if args.history:
         scan_history(scanner, args.root)
+        scan_git_metadata(scanner, args.root)
     if args.archive:
         scan_archive(scanner, args.archive)
     if scanner.findings:

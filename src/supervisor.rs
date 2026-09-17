@@ -8,7 +8,7 @@ use crate::protocol::{Direction, ProtocolObserver, ResumeAttempt};
 use crate::reclaim::{ReclaimAction, ReclaimController, ReclaimReason, ReclaimSnapshot};
 use crate::takeover::{TakeoverConfig, TakeoverManager, TakeoverOutcome};
 use anyhow::{Context, Result, bail};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Read, Write};
@@ -28,6 +28,8 @@ pub struct SupervisorConfig {
     pub sample_every: Duration,
     pub idle_reclaim: Duration,
     pub drain_grace: Duration,
+    pub thread_unload_delay: Duration,
+    pub thread_reclaim_wait: Duration,
     pub fd_policy: FdPolicy,
     pub log_path: PathBuf,
     pub run_dir: PathBuf,
@@ -59,6 +61,8 @@ impl SupervisorConfig {
             sample_every: seconds_env("CODEX_MANAGED_SAMPLE_SECS", 15),
             idle_reclaim: seconds_env("CODEX_MANAGED_IDLE_SECS", 600),
             drain_grace: seconds_env("CODEX_MANAGED_DRAIN_SECS", 3),
+            thread_unload_delay: seconds_env("CODEX_MANAGED_THREAD_UNLOAD_SECS", 2),
+            thread_reclaim_wait: seconds_env("CODEX_MANAGED_THREAD_RECLAIM_WAIT_SECS", 10),
             fd_policy: FdPolicy::new(
                 usize_env("CODEX_MANAGED_FD_WARN", 160),
                 usize_env("CODEX_MANAGED_FD_RECYCLE", 192),
@@ -230,15 +234,22 @@ pub fn run(config: SupervisorConfig) -> Result<i32> {
     Ok(status.code().unwrap_or(1))
 }
 
-struct WorkerProcesses {
-    proxy: Child,
-    server: Option<Child>,
-    pgid: u32,
-    monitored_pid: u32,
-    socket_path: Option<PathBuf>,
+pub(crate) struct WorkerProcesses {
+    pub(crate) proxy: Child,
+    pub(crate) server: Option<Child>,
+    pub(crate) pgid: u32,
+    pub(crate) monitored_pid: u32,
+    pub(crate) socket_path: Option<PathBuf>,
 }
 
-fn start_worker(config: &SupervisorConfig) -> Result<WorkerProcesses> {
+pub(crate) fn start_worker(config: &SupervisorConfig) -> Result<WorkerProcesses> {
+    start_worker_guarded(config, None)
+}
+
+pub(crate) fn start_worker_guarded(
+    config: &SupervisorConfig,
+    owner_pipe: Option<i32>,
+) -> Result<WorkerProcesses> {
     if config.use_existing_daemon {
         let proxy = spawn_proxy(config, None, 0, None)?;
         let pid = proxy.id();
@@ -283,11 +294,17 @@ fn start_worker(config: &SupervisorConfig) -> Result<WorkerProcesses> {
         &config.bundled_marketplace,
     )?;
     let marketplace_override = config_override(&config.personal_marketplace)?;
+    let unload_override = format!(
+        "thread_unload_delay_secs={}",
+        config.thread_unload_delay.as_secs()
+    );
     let mut server = Command::new(&config.codex_bin)
         .args([
             "app-server",
             "-c",
             &marketplace_override,
+            "-c",
+            &unload_override,
             "--listen",
             &listen,
         ])
@@ -302,6 +319,18 @@ fn start_worker(config: &SupervisorConfig) -> Result<WorkerProcesses> {
     let pgid = server.id();
     let started = Instant::now();
     loop {
+        if let Some(fd) = owner_pipe {
+            let mut poll = libc::pollfd {
+                fd,
+                events: libc::POLLIN | libc::POLLHUP,
+                revents: 0,
+            };
+            if unsafe { libc::poll(&mut poll, 1, 0) } > 0 {
+                cleanup_remaining_group(pgid);
+                let _ = server.wait();
+                bail!("owner disconnected during worker startup");
+            }
+        }
         if socket_path
             .metadata()
             .is_ok_and(|metadata| metadata.file_type().is_socket())
@@ -340,7 +369,7 @@ fn start_worker(config: &SupervisorConfig) -> Result<WorkerProcesses> {
     })
 }
 
-fn spawn_proxy(
+pub(crate) fn spawn_proxy(
     config: &SupervisorConfig,
     socket: Option<&std::path::Path>,
     pgid: i32,
@@ -385,14 +414,14 @@ fn reclaim_event(reason: ReclaimReason) -> &'static str {
     }
 }
 
-fn cleanup_remaining_group(pgid: u32) {
+pub(crate) fn cleanup_remaining_group(pgid: u32) {
     let groups = process_tree_groups(pgid);
     signal_groups(&groups, libc::SIGTERM);
     thread::sleep(Duration::from_millis(50));
     signal_groups(&groups, libc::SIGKILL);
 }
 
-fn copy_observed<R: Read, W: Write>(
+pub(crate) fn copy_observed<R: Read, W: Write>(
     mut reader: R,
     mut writer: W,
     observer: &ProtocolObserver,
@@ -435,7 +464,7 @@ where
     }
 }
 
-fn forward_client_chunk<W, F>(
+pub(crate) fn forward_client_chunk<W, F>(
     writer: &mut W,
     observer: &ProtocolObserver,
     bytes: &[u8],
@@ -453,7 +482,7 @@ where
     writer.flush()
 }
 
-fn terminate_group(child: &mut Child, pgid: u32, grace: Duration) -> Result<ExitStatus> {
+pub(crate) fn terminate_group(child: &mut Child, pgid: u32, grace: Duration) -> Result<ExitStatus> {
     let groups = process_tree_groups(pgid);
     signal_groups(&groups, libc::SIGTERM);
     let started = Instant::now();
@@ -468,7 +497,7 @@ fn terminate_group(child: &mut Child, pgid: u32, grace: Duration) -> Result<Exit
     child.wait().context("failed to reap worker")
 }
 
-fn process_tree_groups(root: u32) -> Vec<i32> {
+pub(crate) fn process_tree_groups(root: u32) -> Vec<i32> {
     let mut groups = HashSet::from([root as i32]);
     let Ok(output) = Command::new("/bin/ps")
         .args(["-axo", "pid=,ppid=,pgid="])
@@ -505,7 +534,82 @@ fn process_tree_groups(root: u32) -> Vec<i32> {
     groups.into_iter().collect()
 }
 
-fn signal_groups(groups: &[i32], signal: i32) {
+/// Remember observed descendants across reparenting. Revalidate both PID and
+/// start timestamp before signalling; a historical numeric PID alone is unsafe.
+#[derive(Default)]
+pub(crate) struct ProcessRegistry {
+    known: HashMap<u32, (i32, String)>,
+    root_stamp: Option<String>,
+}
+
+impl ProcessRegistry {
+    pub(crate) fn refresh(&mut self, root: u32) -> bool {
+        let Ok(output) = Command::new("/bin/ps")
+            .args(["-axo", "pid=,ppid=,pgid=,lstart="])
+            .output()
+        else {
+            return false;
+        };
+        if !output.status.success() {
+            return false;
+        }
+        let table: Vec<(u32, u32, i32, String)> = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(|line| {
+                let mut fields = line.split_whitespace();
+                Some((
+                    fields.next()?.parse().ok()?,
+                    fields.next()?.parse().ok()?,
+                    fields.next()?.parse().ok()?,
+                    fields.collect::<Vec<_>>().join(" "),
+                ))
+            })
+            .collect();
+        self.known.retain(|pid, (group, stamp)| {
+            table
+                .iter()
+                .any(|(p, _, g, s)| p == pid && g == group && s == stamp)
+        });
+        let mut ancestors: HashSet<u32> = self.known.keys().copied().collect();
+        let current_stamp = table
+            .iter()
+            .find(|(p, _, _, _)| *p == root)
+            .map(|(_, _, _, s)| s.clone());
+        if self.root_stamp.is_none() {
+            self.root_stamp = current_stamp.clone();
+        }
+        let root_matches = current_stamp.is_some() && current_stamp == self.root_stamp;
+        if root_matches {
+            ancestors.insert(root);
+        }
+        loop {
+            let mut changed = false;
+            for (pid, parent, group, stamp) in &table {
+                if ((*pid == root && root_matches) || ancestors.contains(parent))
+                    && *group > 1
+                    && !stamp.is_empty()
+                {
+                    self.known.insert(*pid, (*group, stamp.clone()));
+                    changed |= ancestors.insert(*pid);
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        true
+    }
+
+    pub(crate) fn signal(&mut self, root: u32, signal: i32) {
+        if !self.refresh(root) {
+            return;
+        }
+        let groups: HashSet<i32> = self.known.values().map(|(group, _)| *group).collect();
+        signal_groups(&groups.into_iter().collect::<Vec<_>>(), signal);
+    }
+}
+
+pub(crate) fn signal_groups(groups: &[i32], signal: i32) {
     for group in groups {
         unsafe {
             libc::kill(-group, signal);
@@ -571,31 +675,51 @@ fn prepare_log(path: &std::path::Path) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    if path
-        .metadata()
-        .map(|m| m.len() > 1024 * 1024)
-        .unwrap_or(false)
-    {
-        let rotated = path.with_extension("jsonl.1");
-        let _ = fs::remove_file(&rotated);
-        fs::rename(path, rotated)?;
-    }
     Ok(())
 }
 
-fn log_event(path: &std::path::Path, event: &str, pid: u32, value: Option<usize>) {
-    let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) else {
-        return;
-    };
+fn write_record(path: &std::path::Path, record: &serde_json::Value) -> io::Result<()> {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::fs::OpenOptionsExt;
+    let guard = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path.with_extension("lock"))?;
+    if unsafe { libc::flock(guard.as_raw_fd(), libc::LOCK_EX) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    if fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) {
+        return Err(io::Error::other("log cannot be a symlink"));
+    }
+    if path.metadata().is_ok_and(|m| m.len() >= 1024 * 1024) {
+        fs::rename(path, path.with_extension("jsonl.1"))?;
+    }
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path)?;
+    file.write_all(format!("{record}\n").as_bytes())
+}
+
+pub(crate) fn log_event(path: &std::path::Path, event: &str, pid: u32, value: Option<usize>) {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
     let record = serde_json::json!({"ts": timestamp, "event": event, "pid": pid, "value": value});
-    let _ = writeln!(file, "{record}");
+    let _ = write_record(path, &record);
 }
 
-fn log_takeover_event(path: &std::path::Path, pid: u32, thread_id: &str, outcome: TakeoverOutcome) {
+pub(crate) fn log_takeover_event(
+    path: &std::path::Path,
+    pid: u32,
+    thread_id: &str,
+    outcome: TakeoverOutcome,
+) {
     let event = match outcome {
         TakeoverOutcome::AlreadyOwned => "takeover_not_needed",
         TakeoverOutcome::TakenOver => "takeover_completed",
@@ -605,9 +729,6 @@ fn log_takeover_event(path: &std::path::Path, pid: u32, thread_id: &str, outcome
         TakeoverOutcome::Failed => "takeover_failed",
         TakeoverOutcome::FailedRolledBack => "takeover_failed_rolled_back",
         TakeoverOutcome::FailedRollback => "takeover_failed_rollback",
-    };
-    let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) else {
-        return;
     };
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -619,7 +740,7 @@ fn log_takeover_event(path: &std::path::Path, pid: u32, thread_id: &str, outcome
         "pid": pid,
         "threadId": thread_id,
     });
-    let _ = writeln!(file, "{record}");
+    let _ = write_record(path, &record);
 }
 
 #[cfg(test)]
@@ -629,6 +750,28 @@ mod tests {
     use std::cell::RefCell;
     use std::io::{self, Write};
     use std::rc::Rc;
+
+    #[test]
+    fn concurrent_metadata_logs_remain_bounded_and_parseable() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("supervisor.jsonl");
+        std::thread::scope(|scope| {
+            for _ in 0..4 {
+                let path = &path;
+                scope.spawn(move || {
+                    for _ in 0..400 {
+                        super::log_event(path, &"x".repeat(1024), 42, None);
+                    }
+                });
+            }
+        });
+        assert!(std::fs::metadata(&path).unwrap().len() < 1024 * 1024 + 2048);
+        for file in [&path, &path.with_extension("jsonl.1")] {
+            for line in std::fs::read_to_string(file).unwrap().lines() {
+                serde_json::from_str::<serde_json::Value>(line).unwrap();
+            }
+        }
+    }
 
     struct EventWriter(Rc<RefCell<Vec<&'static str>>>);
 

@@ -2,7 +2,7 @@
 
 validate_alias() {
     case ${1-} in
-        ''|*[!A-Za-z0-9._-]*) return 1 ;;
+        ''|.|..|*[!A-Za-z0-9._-]*) return 1 ;;
         *) return 0 ;;
     esac
 }
@@ -108,6 +108,10 @@ write_managed_config() {
         printf '  Port %s\n' "$port"
         printf '  IdentityFile %s\n' "$identity_file"
         printf '  IdentitiesOnly yes\n'
+        printf '  ServerAliveInterval 15\n'
+        printf '  ServerAliveCountMax 3\n'
+        printf '  ControlMaster no\n'
+        printf '  ControlPath none\n'
         if [ "$proxy_jump" != none ] && [ -n "$proxy_jump" ]; then
             printf '  ProxyJump %s\n' "$proxy_jump"
         fi

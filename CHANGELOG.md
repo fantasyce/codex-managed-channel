@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Add fixed per-client, single-writer sessions with bounded reattachment to the
+  same official worker; retain legacy entry mode without silently upgrading it.
+- Correct turn identity tracking, resumed/server-started work and pending
+  commands; confirm official idle status before idle/soft-FD cleanup.
+- Add guardian-owned startup, crash cleanup and tracked reparented descendants;
+  preserve hard FD limits and non-renewable age/detach budgets.
+- Serialize and bound metadata logs, add exact client stop, dedicated-key
+  registration checks and SSH liveness settings.
+- Add independent real-runtime/mock-provider acceptance covering reconnect,
+  isolation, expiry, resource limits, crashes and pending user interactions.
+- Reclaim idle thread resources in place with `thread/unsubscribe`; retain the
+  connection on success and use bounded disconnect cleanup only as fallback.
+
 ## 0.1.0 - 2026-09-05
 
 - Isolated official app-server sessions behind a restricted SSH forced command.
