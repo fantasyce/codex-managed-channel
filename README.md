@@ -90,6 +90,14 @@ the hard safety action still stops the whole owned runtime. See
 See [Architecture](docs/architecture.md), [Security model](docs/security-model.md),
 [Compatibility](docs/compatibility.md), and [Troubleshooting](docs/troubleshooting.md).
 
+## Installation feedback
+
+If you tried the release on a real remote Mac, use the short
+[verified install report](https://github.com/fantasyce/codex-managed-channel/issues/new?template=verified_install.yml)
+to record whether installation, connection, and lifecycle cleanup worked. Use
+neutral aliases and never paste keys, account identifiers, host details, task
+IDs, or raw SSH and Desktop configuration.
+
 ## Uninstall
 
 ```sh

@@ -1,0 +1,53 @@
+name: Verified install report
+description: Report a real, redacted managed-channel installation outcome
+title: "install: "
+labels: [documentation]
+body:
+  - type: markdown
+    attributes:
+      value: Report only bounded lifecycle evidence; include no keys, tokens, usernames, hostnames, addresses, task IDs, or raw configuration.
+  - type: input
+    id: version
+    attributes:
+      label: Release version
+      placeholder: v0.2.0
+    validations:
+      required: true
+  - type: dropdown
+    id: architecture
+    attributes:
+      label: Remote architecture
+      options:
+        - Apple silicon
+        - Intel
+    validations:
+      required: true
+  - type: dropdown
+    id: result
+    attributes:
+      label: Observed result
+      options:
+        - Installed and connected
+        - Installed with a workaround
+        - Installation or connection failed
+    validations:
+      required: true
+  - type: textarea
+    id: lifecycle
+    attributes:
+      label: Lifecycle checks performed
+      description: Selectively describe connect, reattach, archive, idle cleanup, or uninstall using neutral aliases.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence or workaround
+      description: Include version and error category only; do not paste raw SSH or Desktop configuration.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: This report contains no keys, tokens, usernames, hostnames, addresses, task IDs, or raw configuration.
+          required: true

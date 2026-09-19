@@ -7,6 +7,19 @@ PROJECT = Path(__file__).resolve().parents[1]
 
 
 class DocumentationContractTests(unittest.TestCase):
+    def test_verified_install_report_is_public_and_redaction_safe(self):
+        readme = (PROJECT / "README.md").read_text()
+        template = (PROJECT / ".github/ISSUE_TEMPLATE/verified_install.yml").read_text()
+        self.assertIn("issues/new?template=verified_install.yml", readme)
+        for phrase in (
+            "Verified install report",
+            "Release version",
+            "Remote architecture",
+            "Observed result",
+            "no keys, tokens, usernames, hostnames, addresses, task IDs, or raw configuration",
+        ):
+            self.assertIn(phrase, template)
+
     def test_required_public_files_exist(self):
         required = (
             "README.md",
