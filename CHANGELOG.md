@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1 - 2026-09-30
+
+- Prefer the installed Desktop Codex runtime over a stale standalone executable
+  when no explicit runtime override is configured. Honor the configured Desktop
+  resources directory and retain explicit binary/install-directory overrides.
+- Cover runtime selection with regression tests; Desktop upgrades take effect
+  for newly started managed workers. Existing workers require a reconnect.
+
 ## 0.2.0 - 2026-09-17
 
 - Add fixed per-client, single-writer sessions with bounded reattachment to the

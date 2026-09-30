@@ -47,9 +47,9 @@ Prerequisites: macOS on both sides, ChatGPT Desktop and Codex already installed
 and authenticated on the remote Mac, and a working administrative SSH alias.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/fantasyce/codex-managed-channel/v0.2.0/install.sh | \
+curl -fsSL https://raw.githubusercontent.com/fantasyce/codex-managed-channel/v0.2.1/install.sh | \
   sh -s -- --remote example-host --alias example-managed \
-  --repository fantasyce/codex-managed-channel --version v0.2.0
+  --repository fantasyce/codex-managed-channel --version v0.2.1
 ```
 
 The installer verifies the release checksum before generating a dedicated

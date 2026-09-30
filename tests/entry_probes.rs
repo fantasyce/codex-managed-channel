@@ -92,3 +92,45 @@ fn entry(temp: &tempfile::TempDir, fake: &std::path::Path, original: &str) -> Co
         .env("SSH_ORIGINAL_COMMAND", original);
     command
 }
+
+#[test]
+fn desktop_runtime_precedes_stale_standalone_binary() {
+    let temp = tempfile::tempdir().unwrap();
+    let desktop = temp.path().join("desktop-resources");
+    fs::create_dir_all(&desktop).unwrap();
+    let fake = fake_codex(&temp);
+    fs::copy(&fake, desktop.join("codex")).unwrap();
+    fs::create_dir_all(temp.path().join(".local/bin")).unwrap();
+    fs::write(temp.path().join(".local/bin/codex"), "#!/bin/sh\nexit 91\n").unwrap();
+    fs::set_permissions(
+        temp.path().join(".local/bin/codex"),
+        fs::Permissions::from_mode(0o755),
+    )
+    .unwrap();
+    let output = entry(&temp, &fake, &format!("{PREFIX}codex --version"))
+        .env_remove("CODEX_MANAGED_CODEX_BIN")
+        .env_remove("CODEX_INSTALL_DIR")
+        .env("CODEX_MANAGED_DESKTOP_RESOURCES", &desktop)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(output.stdout, [NONCE, b"codex-cli test\n"].concat());
+}
+
+#[test]
+fn explicit_runtime_override_precedes_desktop_resources() {
+    let temp = tempfile::tempdir().unwrap();
+    let fake = fake_codex(&temp);
+    let output = entry(&temp, &fake, &format!("{PREFIX}codex --version"))
+        .env(
+            "CODEX_MANAGED_DESKTOP_RESOURCES",
+            temp.path().join("missing"),
+        )
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+}

@@ -11,12 +11,12 @@
 ## Review-first installation
 
 Download `install.sh`, `scripts/install-lib.sh`, the architecture release
-archive, and `SHA256SUMS` from the same `v0.2.0` GitHub release. Inspect the two
+archive, and `SHA256SUMS` from the same `v0.2.1` GitHub release. Inspect the two
 scripts, verify the archive with `shasum -a 256`, then run:
 
 ```sh
 ./install.sh --remote example-host --alias example-managed \
-  --repository fantasyce/codex-managed-channel --version v0.2.0
+  --repository fantasyce/codex-managed-channel --version v0.2.1
 ```
 
 The optional `--key PATH` reuses a dedicated Ed25519 key and its `.pub` file.

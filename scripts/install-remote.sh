@@ -4,7 +4,7 @@ set -eu
 bundle=
 public_key=
 managed_alias=
-version=v0.2.0
+version=v0.2.1
 while [ "$#" -gt 0 ]; do
     case $1 in
         --bundle) bundle=${2-}; shift 2 ;;

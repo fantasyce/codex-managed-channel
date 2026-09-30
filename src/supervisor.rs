@@ -637,6 +637,23 @@ pub fn resolve_codex_binary(home: &std::path::Path) -> Result<PathBuf> {
     let candidate = env::var_os("CODEX_MANAGED_CODEX_BIN")
         .map(PathBuf::from)
         .or_else(|| env::var_os("CODEX_INSTALL_DIR").map(|p| PathBuf::from(p).join("bin/codex")))
+        .or_else(|| {
+            env::var_os("CODEX_MANAGED_DESKTOP_RESOURCES").map(|p| PathBuf::from(p).join("codex"))
+        })
+        .or_else(|| {
+            [
+                PathBuf::from("/Applications/ChatGPT.app/Contents/Resources"),
+                home.join("Applications/ChatGPT.app/Contents/Resources"),
+            ]
+            .into_iter()
+            .flat_map(|resources| {
+                [
+                    resources.join("codex-cli/bin/codex"),
+                    resources.join("codex"),
+                ]
+            })
+            .find(|path| path.is_file())
+        })
         .unwrap_or_else(|| home.join(".local/bin/codex"));
     if !candidate.is_file() {
         bail!("official Codex binary not found at {}", candidate.display());
